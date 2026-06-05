@@ -206,6 +206,22 @@ class Dialog(tk.Toplevel):
     def _submit(self):
         pass
 
+    def _flash(self, widget):
+        try:
+            orig = widget.cget("bg")
+            widget.config(bg="#4a1a28")
+            widget.focus_set()
+            self.after(550, lambda: widget.config(bg=orig))
+        except Exception:
+            pass
+
+    def _flash_combo(self, combo):
+        s = ttk.Style(self)
+        s.configure("Err.TCombobox", fieldbackground="#4a1a28")
+        combo.config(style="Err.TCombobox")
+        combo.focus_set()
+        self.after(550, lambda: combo.config(style="TCombobox"))
+
 
 # ── Dialogs ────────────────────────────────────────────────────────────────────
 
@@ -221,8 +237,9 @@ class AddEntryDialog(Dialog):
         tk.Label(self, text="프로젝트", bg=BG, fg=FG2, font=FONT_SM, anchor="w").pack(fill="x", **pad)
         default = self._entry["project"] if self._entry else (self._projects[0] if self._projects else "")
         self._pvar = tk.StringVar(value=default)
-        ttk.Combobox(self, textvariable=self._pvar, values=self._projects,
-                     state="normal", font=FONT).pack(fill="x", padx=16, pady=(2, 0))
+        self._combo = ttk.Combobox(self, textvariable=self._pvar, values=self._projects,
+                                   state="normal", font=FONT)
+        self._combo.pack(fill="x", padx=16, pady=(2, 0))
 
         tk.Label(self, text="내용  (Ctrl+Enter 저장)", bg=BG, fg=FG2, font=FONT_SM, anchor="w").pack(fill="x", **pad)
         self._txt = tk.Text(self, height=3, bg=ENTRY, fg=FG, insertbackground=FG,
@@ -238,8 +255,13 @@ class AddEntryDialog(Dialog):
     def _submit(self):
         proj = self._pvar.get().strip()
         text = self._txt.get("1.0", "end").strip()
-        if proj and text:
-            self.result = {"project": proj, "text": text}
+        if not proj:
+            self._flash_combo(self._combo)
+            return
+        if not text:
+            self._flash(self._txt)
+            return
+        self.result = {"project": proj, "text": text}
         self.destroy()
 
 
@@ -284,8 +306,13 @@ class AddDueDateDialog(Dialog):
         proj = self._pvar.get().strip()
         task = self._task.get().strip()
         d = self._date.get().strip()
-        if task and d:
-            self.result = {"project": proj, "task": task, "date": d}
+        if not task:
+            self._flash(self._task)
+            return
+        if not d:
+            self._flash(self._date)
+            return
+        self.result = {"project": proj, "task": task, "date": d}
         self.destroy()
 
 
@@ -304,8 +331,9 @@ class AddMilestoneDialog(Dialog):
         tk.Label(f, text="프로젝트", bg=BG, fg=FG2, font=FONT_SM).grid(row=0, column=0, sticky="w", pady=4)
         default = self._item["project"] if self._item else (self._projects[0] if self._projects else "")
         self._pvar = tk.StringVar(value=default)
-        ttk.Combobox(f, textvariable=self._pvar, values=self._projects,
-                     state="normal", font=FONT).grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=4)
+        self._pcombo = ttk.Combobox(f, textvariable=self._pvar, values=self._projects,
+                                    state="normal", font=FONT)
+        self._pcombo.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=4)
 
         tk.Label(f, text="내용", bg=BG, fg=FG2, font=FONT_SM).grid(row=1, column=0, sticky="w", pady=4)
         self._detail = tk.Entry(f, bg=ENTRY, fg=FG, insertbackground=FG, relief="flat", font=FONT)
@@ -328,8 +356,16 @@ class AddMilestoneDialog(Dialog):
         proj = self._pvar.get().strip()
         detail = self._detail.get().strip()
         target = self._target.get().strip()
-        if proj and detail and target:
-            self.result = {"project": proj, "detail": detail, "target": target}
+        if not proj:
+            self._flash_combo(self._pcombo)
+            return
+        if not detail:
+            self._flash(self._detail)
+            return
+        if not target:
+            self._flash(self._target)
+            return
+        self.result = {"project": proj, "detail": detail, "target": target}
         self.destroy()
 
 
@@ -348,8 +384,10 @@ class SimpleTextDialog(Dialog):
 
     def _submit(self):
         text = self._e.get().strip()
-        if text:
-            self.result = text
+        if not text:
+            self._flash(self._e)
+            return
+        self.result = text
         self.destroy()
 
 
