@@ -3,7 +3,7 @@
 mHealthLab 주간 raw 메모를 매주 금요일 이메일 형식으로 자동 정리해주는 Windows 데스크탑 앱.
 
 ## 다운로드
-
+**[auto-weekly-report-creator.exe](https://github.com/Seo-Jangwon/AutoWeeklyReportCreator/releases/download/v1.0.0/auto-weekly-report-creator.exe)**
 
 ## 기능
 
