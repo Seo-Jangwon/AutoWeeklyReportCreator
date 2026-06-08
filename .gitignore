@@ -1,12 +1,7 @@
-# PyInstaller
-build/
+# Node / Electron
+node_modules/
 dist/
-*.spec
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
+release/
 
 # Claude Code (local settings)
 .claude/

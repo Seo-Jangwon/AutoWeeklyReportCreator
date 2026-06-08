@@ -1,0 +1,56 @@
+{
+  "name": "auto-weekly-report-creator",
+  "version": "1.0.0",
+  "description": "Auto Weekly Report Creator",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
+    "build": "vite build",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.seojang.auto-weekly-report-creator",
+    "productName": "Auto Weekly Report Creator",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "icons/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icons/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^33.4.0",
+    "electron-builder": "^25.1.8",
+    "vite": "^6.0.0",
+    "wait-on": "^8.0.1"
+  },
+  "dependencies": {
+    "lucide-react": "^1.17.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
