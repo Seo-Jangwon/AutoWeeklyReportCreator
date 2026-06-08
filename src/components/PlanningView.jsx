@@ -128,23 +128,24 @@ function PlanSection({ icon: Icon, title, items, type, onAdd, onEdit, onDelete, 
   const [doneOpen, setDoneOpen] = useState(false)
 
   const dateOf = x => type === 'dd' ? x.date : x.target
-  const done   = items.filter(x => x.done)
-  const active = items.filter(x => !x.done)
 
-  const overdue  = active.filter(x => { const n = dday(dateOf(x)); return n !== null && n < 0  }).sort((a, b) => dateOf(a) > dateOf(b) ? 1 : -1)
-  const today    = active.filter(x => dday(dateOf(x)) === 0)
-  const imminent = active.filter(x => { const n = dday(dateOf(x)); return n !== null && n > 0 && n <= 7 }).sort((a, b) => dateOf(a) > dateOf(b) ? 1 : -1)
-  const upcoming = active.filter(x => { const n = dday(dateOf(x)); return n !== null && n > 7  }).sort((a, b) => dateOf(a) > dateOf(b) ? 1 : -1)
-  const noDate   = active.filter(x => dday(dateOf(x)) === null)
+  // pair each item with its original index so delete/edit always use the correct index
+  const indexed = items.map((x, i) => [x, i])
+  const done   = indexed.filter(([x]) => x.done)
+  const active = indexed.filter(([x]) => !x.done)
 
-  const findIdx = item => items.indexOf(item)
+  const overdue  = active.filter(([x]) => { const n = dday(dateOf(x)); return n !== null && n < 0  }).sort(([a], [b]) => dateOf(a) > dateOf(b) ? 1 : -1)
+  const today    = active.filter(([x]) => dday(dateOf(x)) === 0)
+  const imminent = active.filter(([x]) => { const n = dday(dateOf(x)); return n !== null && n > 0 && n <= 7 }).sort(([a], [b]) => dateOf(a) > dateOf(b) ? 1 : -1)
+  const upcoming = active.filter(([x]) => { const n = dday(dateOf(x)); return n !== null && n > 7  }).sort(([a], [b]) => dateOf(a) > dateOf(b) ? 1 : -1)
+  const noDate   = active.filter(([x]) => dday(dateOf(x)) === null)
 
-  const renderCards = (list) => list.map(item => (
+  const renderCards = (list) => list.map(([item, idx]) => (
     <PlanCard
-      key={findIdx(item)} item={item} type={type}
-      onEdit={() => onEdit(findIdx(item))}
-      onDelete={() => onDelete(findIdx(item))}
-      onToggleDone={() => onToggleDone(findIdx(item))}
+      key={idx} item={item} type={type}
+      onEdit={() => onEdit(idx)}
+      onDelete={() => onDelete(idx)}
+      onToggleDone={() => onToggleDone(idx)}
     />
   ))
 
