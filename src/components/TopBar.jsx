@@ -52,7 +52,29 @@ function NavBtn({ icon: Icon, onClick }) {
   )
 }
 
-export default function TopBar({ wk, dates, onPrev, onNext, onProjects, onSettings, onGenerate }) {
+function TabSwitcher({ tab, onChange }) {
+  return (
+    <div style={{
+      display: 'flex', background: C.bg3, borderRadius: 8, padding: 2, gap: 2,
+    }}>
+      {[['week', '주간보기'], ['planning', '플래닝']].map(([key, label]) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          style={{
+            padding: '4px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+            background: tab === key ? C.bg2 : 'transparent',
+            color: tab === key ? C.fg : C.fg3,
+            transition: 'all 0.15s',
+            boxShadow: tab === key ? '0 1px 4px rgba(0,0,0,0.35)' : 'none',
+          }}
+        >{label}</button>
+      ))}
+    </div>
+  )
+}
+
+export default function TopBar({ tab, onTabChange, wk, dates, onPrev, onNext, onProjects, onSettings, onGenerate }) {
   const start = dates[0], end = dates[6]
   const label = `${wk}   ${fmt(start)} – ${fmt(end)}`
 
@@ -64,21 +86,27 @@ export default function TopBar({ wk, dates, onPrev, onNext, onProjects, onSettin
       borderBottom: `1px solid ${C.bg3}`,
       background: `linear-gradient(180deg, #1e1e2e 0%, #181825 100%)`,
     }}>
+      {/* Left */}
       <IconBtn icon={FolderOpen} label="프로젝트" onClick={onProjects} />
       <IconBtn icon={Settings}   label="설정"     onClick={onSettings} />
 
+      {/* Center — week nav, always occupies the same space */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-        <NavBtn icon={ChevronLeft}  onClick={onPrev} />
-        <span style={{
-          color: C.fg, fontWeight: 700, fontSize: 13,
-          minWidth: 230, textAlign: 'center', letterSpacing: 0.3,
-        }}>
-          {label}
-        </span>
-        <NavBtn icon={ChevronRight} onClick={onNext} />
+        {tab === 'week' && (
+          <>
+            <NavBtn icon={ChevronLeft}  onClick={onPrev} />
+            <span style={{
+              color: C.fg, fontWeight: 700, fontSize: 13,
+              minWidth: 230, textAlign: 'center', letterSpacing: 0.3,
+            }}>{label}</span>
+            <NavBtn icon={ChevronRight} onClick={onNext} />
+          </>
+        )}
       </div>
 
+      {/* Right */}
       <IconBtn icon={Sparkles} label="Generate" onClick={onGenerate} variant="accent" />
+      <TabSwitcher tab={tab} onChange={onTabChange} />
     </div>
   )
 }

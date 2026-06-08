@@ -9,6 +9,7 @@ import {
 import TopBar from './components/TopBar'
 import WeekGrid from './components/WeekGrid'
 import BottomSections from './components/BottomSections'
+import PlanningView from './components/PlanningView'
 import AddEntryDialog from './components/dialogs/AddEntryDialog'
 import AddDueDateDialog from './components/dialogs/AddDueDateDialog'
 import AddMilestoneDialog from './components/dialogs/AddMilestoneDialog'
@@ -39,6 +40,7 @@ export default function App() {
   const [data, setData]     = useState(null)
   const [dates, setDates]   = useState(() => weekDates(new Date()))
   const [dialog, setDialog] = useState(null)
+  const [tab, setTab]       = useState('week')
 
   useEffect(() => {
     loadStore().then(d => setData(migrateData(d || { ...DEFAULT_DATA })))
@@ -67,14 +69,16 @@ export default function App() {
     mutate(setEntries(data, wk, ds, getEntries(data, wk, ds).filter((_, i) => i !== idx)))
 
   // ── Due date handlers ─────────────────────────────────────────────────────
-  const onAddDD    = () => setDialog({ t: 'addDD' })
-  const onEditDD   = (idx) => setDialog({ t: 'editDD', idx })
-  const onDeleteDD = (idx) => mutate(setDueDates(data, getDueDates(data).filter((_, i) => i !== idx)))
+  const onAddDD        = () => setDialog({ t: 'addDD' })
+  const onEditDD       = (idx) => setDialog({ t: 'editDD', idx })
+  const onDeleteDD     = (idx) => mutate(setDueDates(data, getDueDates(data).filter((_, i) => i !== idx)))
+  const onToggleDoneDD = (idx) => mutate(setDueDates(data, getDueDates(data).map((x, i) => i === idx ? { ...x, done: !x.done } : x)))
 
   // ── Milestone handlers ────────────────────────────────────────────────────
-  const onAddMS    = () => setDialog({ t: 'addMS' })
-  const onEditMS   = (idx) => setDialog({ t: 'editMS', idx })
-  const onDeleteMS = (idx) => mutate(setMilestones(data, getMilestones(data).filter((_, i) => i !== idx)))
+  const onAddMS        = () => setDialog({ t: 'addMS' })
+  const onEditMS       = (idx) => setDialog({ t: 'editMS', idx })
+  const onDeleteMS     = (idx) => mutate(setMilestones(data, getMilestones(data).filter((_, i) => i !== idx)))
+  const onToggleDoneMS = (idx) => mutate(setMilestones(data, getMilestones(data).map((x, i) => i === idx ? { ...x, done: !x.done } : x)))
 
   // ── Blocker handlers ──────────────────────────────────────────────────────
   const onAddBL    = () => setDialog({ t: 'addBL' })
@@ -125,6 +129,7 @@ export default function App() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden' }}>
       <TopBar
+        tab={tab} onTabChange={setTab}
         wk={wk} dates={dates}
         onPrev={() => setDates(ds => ds.map(d => addWeeks(d, -1)))}
         onNext={() => setDates(ds => ds.map(d => addWeeks(d, 1)))}
@@ -133,16 +138,26 @@ export default function App() {
         onGenerate={onGenerate}
       />
 
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '0 18px 0' }}>
-        <WeekGrid dates={dates} data={data} wk={wk}
-          onAdd={onAddEntry} onEdit={onEditEntry} onDelete={onDeleteEntry} />
-        <BottomSections
-          data={data} wk={wk}
-          onAddDD={onAddDD} onEditDD={onEditDD} onDeleteDD={onDeleteDD}
-          onAddMS={onAddMS} onEditMS={onEditMS} onDeleteMS={onDeleteMS}
-          onAddBL={onAddBL} onEditBL={onEditBL} onDeleteBL={onDeleteBL}
+      {tab === 'week' && (
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '0 18px 0' }}>
+          <WeekGrid dates={dates} data={data} wk={wk}
+            onAdd={onAddEntry} onEdit={onEditEntry} onDelete={onDeleteEntry} />
+          <BottomSections
+            data={data} wk={wk}
+            onAddDD={onAddDD} onEditDD={onEditDD} onDeleteDD={onDeleteDD}
+            onAddMS={onAddMS} onEditMS={onEditMS} onDeleteMS={onDeleteMS}
+            onAddBL={onAddBL} onEditBL={onEditBL} onDeleteBL={onDeleteBL}
+          />
+        </div>
+      )}
+
+      {tab === 'planning' && (
+        <PlanningView
+          data={data}
+          onAddDD={onAddDD} onEditDD={onEditDD} onDeleteDD={onDeleteDD} onToggleDoneDD={onToggleDoneDD}
+          onAddMS={onAddMS} onEditMS={onEditMS} onDeleteMS={onDeleteMS} onToggleDoneMS={onToggleDoneMS}
         />
-      </div>
+      )}
 
       {/* ── Dialogs ─────────────────────────────────────────────────────── */}
       {dialog?.t === 'addEntry' && (

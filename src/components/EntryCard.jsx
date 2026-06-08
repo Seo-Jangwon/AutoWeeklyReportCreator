@@ -32,7 +32,7 @@ export default function EntryCard({ entry, onEdit, onDelete }) {
             {entry.project}
           </div>
         )}
-        <div style={{ color: C.fg, fontSize: 12, lineHeight: 1.45, wordBreak: 'break-word' }}>
+        <div style={{ color: C.fg, fontSize: 12, lineHeight: 1.55, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
           {entry.text}
         </div>
       </div>
