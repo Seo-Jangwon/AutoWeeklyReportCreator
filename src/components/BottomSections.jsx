@@ -22,7 +22,7 @@ function DdayBadge({ dateStr }) {
   )
 }
 
-function SectionItem({ text, color, dateStr, onEdit, onDelete }) {
+function SectionItem({ project, text, color, dateStr, onEdit, onDelete }) {
   const [hov, setHov] = useState(false)
   return (
     <div
@@ -38,15 +38,24 @@ function SectionItem({ text, color, dateStr, onEdit, onDelete }) {
       }}
     >
       <div style={{ width: 3, background: color || C.fg3, alignSelf: 'stretch', flexShrink: 0 }} />
-      <span
+      <div
         onDoubleClick={onEdit}
         style={{
-          flex: 1, padding: '6px 10px', color: C.fg, fontSize: 12,
-          lineHeight: 1.4, cursor: 'default', wordBreak: 'break-word',
+          flex: 1, padding: '5px 8px', display: 'flex', alignItems: 'center',
+          gap: 6, minWidth: 0, flexWrap: 'wrap',
         }}
       >
-        {text}
-      </span>
+        {project && (
+          <span style={{
+            background: `${color}1a`, color, fontSize: 10, fontWeight: 600,
+            padding: '1px 6px', borderRadius: 3, border: `1px solid ${color}33`,
+            flexShrink: 0, whiteSpace: 'nowrap',
+          }}>{project}</span>
+        )}
+        <span style={{ color: C.fg, fontSize: 12, lineHeight: 1.4, wordBreak: 'break-word' }}>
+          {text}
+        </span>
+      </div>
       {dateStr && <DdayBadge dateStr={dateStr} />}
       {hov && (
         <button
@@ -154,21 +163,21 @@ export default function BottomSections({
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         <Section icon={CalendarClock} title="Due Dates" onAdd={onAddDD} items={
-          dueDates.map((x, i) => {
-            const p = (x.project || '').trim()
-            const label = `${p ? `[${p}] ` : ''}${x.task} → ${fmtDateStr(x.date)}`
-            return (
-              <SectionItem key={i} text={label} color={projectColor(x.project)}
-                dateStr={x.date}
-                onEdit={() => onEditDD(i)} onDelete={() => onDeleteDD(i)} />
-            )
-          })
+          dueDates.map((x, i) => (
+            <SectionItem key={i}
+              project={x.project || undefined}
+              text={`${x.task} → ${fmtDateStr(x.date)}`}
+              color={projectColor(x.project)}
+              dateStr={x.date}
+              onEdit={() => onEditDD(i)} onDelete={() => onDeleteDD(i)} />
+          ))
         }>등록된 마감일 없음</Section>
 
         <Section icon={Milestone} title="Milestones" onAdd={onAddMS} items={
           milestones.map((x, i) => (
             <SectionItem key={i}
-              text={`${x.project}: ${x.detail} → ${fmtDateStr(x.target)}`}
+              project={x.project || undefined}
+              text={`${x.detail} → ${fmtDateStr(x.target)}`}
               color={projectColor(x.project)}
               dateStr={x.target}
               onEdit={() => onEditMS(i)} onDelete={() => onDeleteMS(i)} />
