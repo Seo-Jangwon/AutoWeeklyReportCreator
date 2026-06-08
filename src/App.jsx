@@ -72,13 +72,25 @@ export default function App() {
   const onAddDD        = () => setDialog({ t: 'addDD' })
   const onEditDD       = (idx) => setDialog({ t: 'editDD', idx })
   const onDeleteDD     = (idx) => mutate(setDueDates(data, getDueDates(data).filter((_, i) => i !== idx)))
-  const onToggleDoneDD = (idx) => mutate(setDueDates(data, getDueDates(data).map((x, i) => i === idx ? { ...x, done: !x.done } : x)))
+  const onToggleDoneDD = (idx) => mutate(setDueDates(data, getDueDates(data).map((x, i) => {
+    if (i !== idx) return x
+    const done = !x.done
+    if (done) return { ...x, done, completedAt: toISO(new Date()) }
+    const { completedAt: _, ...rest } = x
+    return { ...rest, done }
+  })))
 
   // ── Milestone handlers ────────────────────────────────────────────────────
   const onAddMS        = () => setDialog({ t: 'addMS' })
   const onEditMS       = (idx) => setDialog({ t: 'editMS', idx })
   const onDeleteMS     = (idx) => mutate(setMilestones(data, getMilestones(data).filter((_, i) => i !== idx)))
-  const onToggleDoneMS = (idx) => mutate(setMilestones(data, getMilestones(data).map((x, i) => i === idx ? { ...x, done: !x.done } : x)))
+  const onToggleDoneMS = (idx) => mutate(setMilestones(data, getMilestones(data).map((x, i) => {
+    if (i !== idx) return x
+    const done = !x.done
+    if (done) return { ...x, done, completedAt: toISO(new Date()) }
+    const { completedAt: _, ...rest } = x
+    return { ...rest, done }
+  })))
 
   // ── Blocker handlers ──────────────────────────────────────────────────────
   const onAddBL    = () => setDialog({ t: 'addBL' })
@@ -88,12 +100,15 @@ export default function App() {
   // ── Generate ──────────────────────────────────────────────────────────────
   const onGenerate = () => {
     const wkData = getFullWeek(data, wk)
+    // projMap: { project -> { dateLabel -> [txt, ...] } }  (insertion order = chronological)
     const projMap = {}
     for (const d of dates) {
-      const ds = toISO(d)
+      const ds  = toISO(d)
+      const tag = fmt(d)
       for (const e of (wkData.entries[ds] || [])) {
-        if (!projMap[e.project]) projMap[e.project] = []
-        projMap[e.project].push([fmt(d), e.text])
+        if (!projMap[e.project])       projMap[e.project] = {}
+        if (!projMap[e.project][tag])  projMap[e.project][tag] = []
+        projMap[e.project][tag].push(e.text)
       }
     }
     const friday  = weekFriday(dates[0])
@@ -105,9 +120,14 @@ export default function App() {
     const lines = [`[제목] ${subject}`, `[받는 사람] ${RECIPIENT}`, '', '== 이번 주 작업 ==']
 
     if (Object.keys(projMap).length) {
-      for (const [proj, items] of Object.entries(projMap))
-        for (const [tag, txt] of items)
-          lines.push(`- [${proj}] ${txt} (${tag})`)
+      Object.entries(projMap).forEach(([proj, dateMap], gi) => {
+        if (gi > 0) lines.push('')
+        lines.push(`[${proj || '기타'}]`)
+        for (const [tag, txts] of Object.entries(dateMap)) {
+          lines.push(`(${tag})`)
+          txts.forEach(txt => lines.push(`- ${txt}`))
+        }
+      })
     } else {
       lines.push('(항목 없음)')
     }
@@ -117,8 +137,14 @@ export default function App() {
     due.length ? due.forEach(x => lines.push(`- ${ddLabel(x)}`)) : lines.push('(항목 없음)')
 
     lines.push('', '== 마일스톤 (Milestones) ==')
-    const ms = getMilestones(data)
-    ms.length ? ms.forEach(x => lines.push(`- ${x.project}: ${x.detail} → ${fmtDateStr(x.target)}`)) : lines.push('(항목 없음)')
+    const weekStart = toISO(dates[0])
+    const weekEnd   = toISO(dates[6])
+    const msList = getMilestones(data).filter(x =>
+      !x.done || (x.completedAt && x.completedAt >= weekStart && x.completedAt <= weekEnd)
+    )
+    msList.length
+      ? msList.forEach(x => lines.push(`- ${x.done ? '[완료] ' : ''}${x.project}: ${x.detail} → ${fmtDateStr(x.target)}`))
+      : lines.push('(항목 없음)')
 
     const bl = wkData.blockers || []
     if (bl.length) { lines.push('', '== Blockers =='); bl.forEach(b => lines.push(`- ${b}`)) }

@@ -1,10 +1,29 @@
+import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { C, projectColor, blend } from '../utils/colors'
 
 const COLS = 4
 
 export default function TagPicker({ projects, value, onChange, error }) {
+  const [customInput, setCustomInput] = useState(
+    value && !projects.includes(value) ? value : ''
+  )
   const col = projectColor(value)
+
+  useEffect(() => {
+    if (projects.includes(value)) setCustomInput('')
+  }, [value, projects])
+
+  const selectProject = (p, isSelected) => {
+    setCustomInput('')
+    onChange(isSelected ? '' : p)
+  }
+
+  const onCustomChange = (e) => {
+    const v = e.target.value
+    setCustomInput(v)
+    onChange(v || '')
+  }
 
   return (
     <div style={{
@@ -23,15 +42,12 @@ export default function TagPicker({ projects, value, onChange, error }) {
           }}>
             <span style={{ color: '#1e1e2e', fontSize: 12, fontWeight: 700, padding: '3px 10px' }}>{value}</span>
             <button
-              onClick={() => onChange('')}
+              onClick={() => { setCustomInput(''); onChange('') }}
               style={{
-                background: 'rgba(0,0,0,0.15)',
-                color: '#1e1e2e',
-                padding: '0 7px',
-                height: '100%',
+                background: 'rgba(0,0,0,0.15)', color: '#1e1e2e',
+                padding: '0 7px', height: '100%',
                 display: 'flex', alignItems: 'center',
-                borderRadius: '0 5px 5px 0',
-                transition: 'background 0.1s',
+                borderRadius: '0 5px 5px 0', transition: 'background 0.1s',
               }}
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.28)'}
               onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0.15)'}
@@ -54,14 +70,14 @@ export default function TagPicker({ projects, value, onChange, error }) {
         justifyContent: 'start',
       }}>
         {projects.length === 0 ? (
-          <span style={{ color: C.fg3, fontSize: 12, padding: '4px 0' }}>프로젝트를 먼저 등록하세요</span>
+          <span style={{ color: C.fg3, fontSize: 12, padding: '4px 0', gridColumn: `1 / -1` }}>프로젝트를 먼저 등록하세요</span>
         ) : projects.map(p => {
           const c = projectColor(p)
           const sel = p === value
           return (
             <button
               key={p}
-              onClick={() => onChange(sel ? '' : p)}
+              onClick={() => selectProject(p, sel)}
               style={{
                 background: sel ? blend(c, C.bg2, 0.5) : C.bg3,
                 color: sel ? c : C.fg2,
@@ -79,6 +95,26 @@ export default function TagPicker({ projects, value, onChange, error }) {
             </button>
           )
         })}
+      </div>
+
+      <div style={{ height: 1, background: C.bg3 }} />
+
+      <div style={{ padding: '6px 10px 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ color: C.fg3, fontSize: 11, flexShrink: 0 }}>일회성 태그</span>
+        <input
+          value={customInput}
+          onChange={onCustomChange}
+          placeholder="직접 입력..."
+          style={{
+            flex: 1, background: C.bg3,
+            color: customInput ? C.fg : C.fg3,
+            fontSize: 11, padding: '3px 8px', borderRadius: 4,
+            border: `1px solid ${customInput ? C.accent + '55' : 'transparent'}`,
+            outline: 'none', transition: 'border-color 0.15s',
+          }}
+          onFocus={e => e.currentTarget.style.borderColor = C.accent + '88'}
+          onBlur={e => e.currentTarget.style.borderColor = customInput ? C.accent + '55' : 'transparent'}
+        />
       </div>
     </div>
   )

@@ -1,19 +1,24 @@
 import { useMemo, useState } from 'react'
-import { toISO } from '../utils/dates'
-import { C } from '../utils/colors'
+import { toISO, fmtDateStr } from '../utils/dates'
+import { C, projectColor } from '../utils/colors'
 
 const WEEK_DAYS = ['월', '화', '수', '목', '금', '토', '일']
 const CELL_H = 13
 const GAP    = 3
 
-function buildContribMap(data) {
-  const map = {}
+function buildMaps(data) {
+  const contrib = {}
+  const detail  = {}
   for (const wkData of Object.values(data.weeks || {})) {
     for (const [ds, entries] of Object.entries(wkData.entries || {})) {
-      if (entries?.length) map[ds] = (map[ds] || 0) + entries.length
+      if (entries?.length) {
+        contrib[ds] = (contrib[ds] || 0) + entries.length
+        if (!detail[ds]) detail[ds] = []
+        for (const e of entries) detail[ds].push(e)
+      }
     }
   }
-  return map
+  return { contrib, detail }
 }
 
 function cellColor(count) {
@@ -27,8 +32,13 @@ function cellColor(count) {
 const COL_TEMPLATE = `18px repeat(52, 1fr)`
 
 export default function ContribGraph({ data }) {
-  const [tooltip, setTooltip] = useState(null)
-  const contribMap = useMemo(() => buildContribMap(data), [data])
+  const [tooltip, setTooltip]   = useState(null)
+  const [selected, setSelected] = useState(null)
+
+  const { contribMap, detailMap } = useMemo(() => {
+    const { contrib, detail } = buildMaps(data)
+    return { contribMap: contrib, detailMap: detail }
+  }, [data])
 
   const { cols, monthRow } = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -40,7 +50,6 @@ export default function ContribGraph({ data }) {
     start.setDate(thisMonday.getDate() - 51 * 7)
 
     const cols = []
-    // monthRow[w] = label string or null
     const monthRow = Array(52).fill(null)
     let lastMonth = -1
 
@@ -86,7 +95,7 @@ export default function ContribGraph({ data }) {
         gap: `0 ${GAP}px`,
         marginBottom: 3,
       }}>
-        <div /> {/* empty – aligns with day label column */}
+        <div />
         {monthRow.map((label, w) => (
           <div key={w} style={{
             color: C.fg3, fontSize: 10,
@@ -102,7 +111,7 @@ export default function ContribGraph({ data }) {
         gridTemplateColumns: COL_TEMPLATE,
         gap: `0 ${GAP}px`,
       }}>
-        {/* Day labels column */}
+        {/* Day labels */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
           {WEEK_DAYS.map((d, i) => (
             <div key={d} style={{
@@ -118,19 +127,24 @@ export default function ContribGraph({ data }) {
         {cols.map((col, w) => (
           <div key={w} style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
             {col.map((date, d) => {
-              const iso    = toISO(date)
-              const count  = contribMap[iso] || 0
-              const isFuture = iso > todayISO
+              const iso     = toISO(date)
+              const count   = contribMap[iso] || 0
+              const isFuture  = iso > todayISO
+              const isSelected = iso === selected
               return (
                 <div
                   key={d}
+                  onClick={() => { if (count > 0) setSelected(s => s === iso ? null : iso) }}
                   style={{
                     height: CELL_H, borderRadius: 2,
                     background: isFuture ? 'transparent' : cellColor(count),
-                    border: isFuture ? `1px solid rgba(69,71,90,0.4)` : 'none',
+                    border: isSelected
+                      ? `1px solid ${C.accent}`
+                      : isFuture ? `1px solid rgba(69,71,90,0.4)` : 'none',
                     cursor: count > 0 ? 'pointer' : 'default',
-                    transition: 'filter 0.1s, transform 0.1s',
+                    transition: 'filter 0.1s',
                     boxSizing: 'border-box',
+                    outline: isSelected ? `1px solid ${C.accent}44` : 'none',
                   }}
                   onMouseEnter={e => {
                     if (!isFuture) e.currentTarget.style.filter = 'brightness(1.4)'
@@ -157,7 +171,49 @@ export default function ContribGraph({ data }) {
         <span style={{ color: C.fg3, fontSize: 10, marginLeft: 2 }}>많음</span>
       </div>
 
-      {/* Tooltip — fixed, follows mouse position */}
+      {/* Detail panel — shown when a day is selected */}
+      {selected && detailMap[selected] && (
+        <div style={{
+          marginTop: 10,
+          borderTop: `1px solid ${C.bg3}`,
+          paddingTop: 8,
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: 6,
+          }}>
+            <span style={{ color: C.accent2, fontSize: 11, fontWeight: 700 }}>
+              {fmtDateStr(selected)} · {detailMap[selected].length}건
+            </span>
+            <button
+              onClick={() => setSelected(null)}
+              style={{ color: C.fg3, fontSize: 11, background: 'transparent', padding: '0 2px' }}
+            >✕</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
+            {detailMap[selected].map((e, i) => {
+              const c = projectColor(e.project)
+              return (
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                  <div style={{ width: 3, borderRadius: 2, background: c, alignSelf: 'stretch', flexShrink: 0 }} />
+                  {e.project && (
+                    <span style={{
+                      background: `${c}1a`, color: c, fontSize: 10, fontWeight: 600,
+                      padding: '1px 5px', borderRadius: 3, border: `1px solid ${c}33`,
+                      flexShrink: 0, whiteSpace: 'nowrap',
+                    }}>{e.project}</span>
+                  )}
+                  <span style={{ color: C.fg2, fontSize: 11, lineHeight: 1.4, wordBreak: 'break-word' }}>
+                    {e.text}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Tooltip */}
       {tooltip && (
         <div style={{
           position: 'fixed',

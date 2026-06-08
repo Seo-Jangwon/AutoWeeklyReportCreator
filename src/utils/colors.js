@@ -16,8 +16,16 @@ export const C = {
 }
 
 const PROJECT_COLORS = [
-  '#89b4fa', '#a6e3a1', '#fab387', '#cba6f7', '#94e2d5',
-  '#f9e2af', '#f5c2e7', '#b4befe', '#eba0ac', '#74c7ec',
+  '#89b4fa', // blue      ~222°
+  '#a6e3a1', // green     ~122°
+  '#fab387', // peach      ~27°
+  '#cba6f7', // mauve     ~267°
+  '#94e2d5', // teal      ~177°
+  '#f9e2af', // yellow     ~47°
+  '#f5c2e7', // pink      ~312°
+  '#f38ba8', // red       ~348°
+  '#c3e88d', // lime       ~82°
+  '#e0af68', // amber      ~38°
 ]
 
 const CRC32_TABLE = (() => {

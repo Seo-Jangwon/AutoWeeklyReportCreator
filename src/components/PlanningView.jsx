@@ -59,6 +59,11 @@ function PlanCard({ item, type, onEdit, onDelete, onToggleDone }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
           {!isDone && <DdayBadge dateStr={dateStr} />}
           <span style={{ color: C.fg3, fontSize: 10 }}>{fmtDateStr(dateStr)}</span>
+          {isDone && item.completedAt && (
+            <span style={{ color: C.success, fontSize: 10, marginLeft: 'auto', opacity: 0.85 }}>
+              완료 {fmtDateStr(item.completedAt)}
+            </span>
+          )}
         </div>
       </div>
 
