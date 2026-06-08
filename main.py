@@ -223,11 +223,100 @@ class Dialog(tk.Toplevel):
         self.after(550, lambda: combo.config(style="TCombobox"))
 
 
+# ── Tag Picker ────────────────────────────────────────────────────────────────
+
+class TagPicker(tk.Frame):
+    """Selected-pill area + clickable project list. Single-select."""
+    _COLS = 4
+
+    def __init__(self, parent, projects, initial=""):
+        super().__init__(parent, bg=BG2,
+                         highlightbackground=BG3, highlightthickness=1)
+        self._projects = projects
+        self._selected = initial if initial in projects else ""
+        self._build()
+
+    def _build(self):
+        # ── 선택된 프로젝트 표시 ──────────────────────────
+        self._sel_f = tk.Frame(self, bg=BG2)
+        self._sel_f.pack(fill="x", padx=8, pady=(6, 4))
+
+        tk.Frame(self, bg=LINE, height=1).pack(fill="x")
+
+        # tk.Label(self, text="프로젝트 목록", bg=BG2, fg=FG3,
+        #          font=FONT_XS, anchor="w").pack(fill="x", padx=8, pady=(4, 2))
+
+        # ── 선택 가능한 목록 ──────────────────────────────
+        self._list_f = tk.Frame(self, bg=BG2)
+        self._list_f.pack(fill="x", padx=8, pady=(0, 6))
+
+        self._redraw_sel()
+        self._redraw_list()
+
+    def _redraw_sel(self):
+        for w in self._sel_f.winfo_children():
+            w.destroy()
+        if not self._selected:
+            tk.Label(self._sel_f, text="선택하세요", bg=BG2, fg=FG3,
+                     font=FONT_SM, pady=3).pack(side="left")
+            return
+        col = project_color(self._selected)
+        pill = tk.Frame(self._sel_f, bg=col)
+        pill.pack(side="left")
+        tk.Label(pill, text=self._selected, bg=col, fg="#1e1e2e",
+                 font=FONT_SM, padx=8, pady=3).pack(side="left")
+        tk.Button(pill, text="×", bg=col, fg="#1e1e2e",
+                  font=FONT_BD, relief="flat", bd=0, padx=6,
+                  cursor="hand2",
+                  activebackground=lighten(col, 0.2), activeforeground="#1e1e2e",
+                  command=self._deselect).pack(side="left")
+
+    def _redraw_list(self):
+        for w in self._list_f.winfo_children():
+            w.destroy()
+        if not self._projects:
+            tk.Label(self._list_f, text="프로젝트를 먼저 등록하세요",
+                     bg=BG2, fg=FG3, font=FONT_SM).pack(pady=4)
+            return
+        for i, p in enumerate(self._projects):
+            r, c = divmod(i, self._COLS)
+            col = project_color(p)
+            is_sel = (p == self._selected)
+            lbl = tk.Label(
+                self._list_f,
+                text=("" if is_sel else "") + p,
+                bg=blend(col, BG2, 0.55) if is_sel else BG3,
+                fg=col if is_sel else FG2,
+                font=FONT_SM, padx=10, pady=4,
+                cursor="hand2", relief="flat",
+            )
+            lbl.grid(row=r, column=c, padx=3, pady=3, sticky="w")
+            lbl.bind("<Button-1>", lambda _, proj=p: self._toggle(proj))
+
+    def _toggle(self, proj: str):
+        self._selected = "" if self._selected == proj else proj
+        self._redraw_sel()
+        self._redraw_list()
+
+    def _deselect(self):
+        self._selected = ""
+        self._redraw_sel()
+        self._redraw_list()
+
+    def get(self) -> str:
+        return self._selected
+
+    def flash(self):
+        self.config(highlightbackground=WARN, highlightthickness=2)
+        self.after(600, lambda: self.config(highlightbackground=BG3, highlightthickness=1))
+
+
 # ── Dialogs ────────────────────────────────────────────────────────────────────
 
 class AddEntryDialog(Dialog):
     def __init__(self, parent, projects, day_label, entry=None):
-        super().__init__(parent, f"활동 {'수정' if entry else '추가'} — {day_label}", 460, 240)
+        rows = max(1, (len(projects) + 3) // 4) if projects else 1
+        super().__init__(parent, f"활동 {'수정' if entry else '추가'} — {day_label}", 460, 290 + rows * 34)
         self._projects = projects
         self._entry = entry
         self._build()
@@ -235,16 +324,14 @@ class AddEntryDialog(Dialog):
     def _build(self):
         pad = dict(padx=16, pady=(8, 0))
         tk.Label(self, text="프로젝트", bg=BG, fg=FG2, font=FONT_SM, anchor="w").pack(fill="x", **pad)
-        default = self._entry["project"] if self._entry else (self._projects[0] if self._projects else "")
-        self._pvar = tk.StringVar(value=default)
-        self._combo = ttk.Combobox(self, textvariable=self._pvar, values=self._projects,
-                                   state="normal", font=FONT)
-        self._combo.pack(fill="x", padx=16, pady=(2, 0))
+        initial = self._entry["project"] if self._entry else (self._projects[0] if self._projects else "")
+        self._picker = TagPicker(self, self._projects, initial=initial)
+        self._picker.pack(fill="x", padx=16, pady=(4, 0))
 
         tk.Label(self, text="내용  (Ctrl+Enter 저장)", bg=BG, fg=FG2, font=FONT_SM, anchor="w").pack(fill="x", **pad)
         self._txt = tk.Text(self, height=3, bg=ENTRY, fg=FG, insertbackground=FG,
                             relief="flat", font=FONT, wrap="word", padx=6, pady=4)
-        self._txt.pack(fill="x", padx=16, pady=(2, 0))
+        self._txt.pack(fill="both", expand=True, padx=16, pady=(2, 0))
         if self._entry:
             self._txt.insert("1.0", self._entry["text"])
 
@@ -253,10 +340,10 @@ class AddEntryDialog(Dialog):
         self._txt.focus_set()
 
     def _submit(self):
-        proj = self._pvar.get().strip()
+        proj = self._picker.get().strip()
         text = self._txt.get("1.0", "end").strip()
         if not proj:
-            self._flash_combo(self._combo)
+            self._picker.flash()
             return
         if not text:
             self._flash(self._txt)
@@ -267,32 +354,32 @@ class AddEntryDialog(Dialog):
 
 class AddDueDateDialog(Dialog):
     def __init__(self, parent, projects, item=None):
-        super().__init__(parent, "마감일 " + ("수정" if item else "추가"), 440, 240)
+        rows = max(1, (len(projects) + 3) // 4) if projects else 1
+        super().__init__(parent, "마감일 " + ("수정" if item else "추가"), 440, 270 + rows * 34)
         self._projects = projects
         self._item = item
         self._build()
 
     def _build(self):
+        pad = dict(padx=16, pady=(8, 0))
+        tk.Label(self, text="프로젝트", bg=BG, fg=FG2, font=FONT_SM, anchor="w").pack(fill="x", **pad)
+        initial = self._item.get("project", "") if self._item else (self._projects[0] if self._projects else "")
+        self._picker = TagPicker(self, self._projects, initial=initial)
+        self._picker.pack(fill="x", padx=16, pady=(4, 0))
+
         f = tk.Frame(self, bg=BG)
-        f.pack(fill="x", padx=16, pady=10)
+        f.pack(fill="x", padx=16, pady=(8, 0))
         f.columnconfigure(1, weight=1)
 
-        tk.Label(f, text="프로젝트", bg=BG, fg=FG2, font=FONT_SM).grid(row=0, column=0, sticky="w", pady=4)
-        default = self._item.get("project", "") if self._item else (self._projects[0] if self._projects else "")
-        self._pvar = tk.StringVar(value=default)
-        ttk.Combobox(f, textvariable=self._pvar, values=self._projects,
-                     state="normal", font=FONT).grid(row=0, column=1, columnspan=2,
-                                                      sticky="ew", padx=(8, 0), pady=4)
-
-        tk.Label(f, text="작업", bg=BG, fg=FG2, font=FONT_SM).grid(row=1, column=0, sticky="w", pady=4)
+        tk.Label(f, text="작업", bg=BG, fg=FG2, font=FONT_SM).grid(row=0, column=0, sticky="w", pady=4)
         self._task = tk.Entry(f, bg=ENTRY, fg=FG, insertbackground=FG, relief="flat", font=FONT)
-        self._task.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=4)
+        self._task.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=4)
 
-        tk.Label(f, text="날짜", bg=BG, fg=FG2, font=FONT_SM).grid(row=2, column=0, sticky="w", pady=4)
+        tk.Label(f, text="날짜", bg=BG, fg=FG2, font=FONT_SM).grid(row=1, column=0, sticky="w", pady=4)
         self._date = tk.Entry(f, bg=ENTRY, fg=FG, insertbackground=FG, relief="flat", font=FONT, width=12)
-        self._date.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=4)
+        self._date.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=4)
         tk.Label(f, text="작은 작업에 대한 마감일 입력", bg=BG, fg=FG2, font=FONT_SM).grid(
-            row=2, column=2, sticky="w", padx=6)
+            row=1, column=2, sticky="w", padx=6)
 
         if self._item:
             self._task.insert(0, self._item["task"])
@@ -303,7 +390,7 @@ class AddDueDateDialog(Dialog):
         self.bind("<Return>", lambda _: self._submit())
 
     def _submit(self):
-        proj = self._pvar.get().strip()
+        proj = self._picker.get()
         task = self._task.get().strip()
         d = self._date.get().strip()
         if not task:
@@ -318,32 +405,32 @@ class AddDueDateDialog(Dialog):
 
 class AddMilestoneDialog(Dialog):
     def __init__(self, parent, projects, item=None):
-        super().__init__(parent, "마일스톤 " + ("수정" if item else "추가"), 440, 220)
+        rows = max(1, (len(projects) + 3) // 4) if projects else 1
+        super().__init__(parent, "마일스톤 " + ("수정" if item else "추가"), 440, 270 + rows * 34)
         self._projects = projects
         self._item = item
         self._build()
 
     def _build(self):
+        pad = dict(padx=16, pady=(8, 0))
+        tk.Label(self, text="프로젝트", bg=BG, fg=FG2, font=FONT_SM, anchor="w").pack(fill="x", **pad)
+        initial = self._item["project"] if self._item else (self._projects[0] if self._projects else "")
+        self._picker = TagPicker(self, self._projects, initial=initial)
+        self._picker.pack(fill="x", padx=16, pady=(4, 0))
+
         f = tk.Frame(self, bg=BG)
-        f.pack(fill="x", padx=16, pady=10)
+        f.pack(fill="x", padx=16, pady=(8, 0))
         f.columnconfigure(1, weight=1)
 
-        tk.Label(f, text="프로젝트", bg=BG, fg=FG2, font=FONT_SM).grid(row=0, column=0, sticky="w", pady=4)
-        default = self._item["project"] if self._item else (self._projects[0] if self._projects else "")
-        self._pvar = tk.StringVar(value=default)
-        self._pcombo = ttk.Combobox(f, textvariable=self._pvar, values=self._projects,
-                                    state="normal", font=FONT)
-        self._pcombo.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=4)
-
-        tk.Label(f, text="내용", bg=BG, fg=FG2, font=FONT_SM).grid(row=1, column=0, sticky="w", pady=4)
+        tk.Label(f, text="내용", bg=BG, fg=FG2, font=FONT_SM).grid(row=0, column=0, sticky="w", pady=4)
         self._detail = tk.Entry(f, bg=ENTRY, fg=FG, insertbackground=FG, relief="flat", font=FONT)
-        self._detail.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=4)
+        self._detail.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=4)
 
-        tk.Label(f, text="목표시점", bg=BG, fg=FG2, font=FONT_SM).grid(row=2, column=0, sticky="w", pady=4)
+        tk.Label(f, text="목표시점", bg=BG, fg=FG2, font=FONT_SM).grid(row=1, column=0, sticky="w", pady=4)
         self._target = tk.Entry(f, bg=ENTRY, fg=FG, insertbackground=FG, relief="flat", font=FONT, width=14)
-        self._target.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=4)
+        self._target.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=4)
         tk.Label(f, text="큰 작업에 대한 마감일 입력", bg=BG, fg=FG2, font=FONT_SM).grid(
-            row=2, column=2, sticky="w", padx=6)
+            row=1, column=2, sticky="w", padx=6)
 
         if self._item:
             self._detail.insert(0, self._item["detail"])
@@ -353,11 +440,11 @@ class AddMilestoneDialog(Dialog):
         self.bind("<Return>", lambda _: self._submit())
 
     def _submit(self):
-        proj = self._pvar.get().strip()
+        proj = self._picker.get().strip()
         detail = self._detail.get().strip()
         target = self._target.get().strip()
         if not proj:
-            self._flash_combo(self._pcombo)
+            self._picker.flash()
             return
         if not detail:
             self._flash(self._detail)
