@@ -1,4 +1,8 @@
-export const DEFAULT_DATA = { projects: [], weeks: {}, due_dates: [], milestones: [], user_name: '서장원' }
+export const DEFAULT_DATA = { projects: [], weeks: {}, due_dates: [], milestones: [], tasks: [], user_name: '서장원' }
+
+export function genId() {
+  return Math.random().toString(36).slice(2, 9) + Date.now().toString(36)
+}
 
 // Migrate old per-week due_dates/milestones to global arrays and remove per-week copies
 export function migrateData(data) {
@@ -26,7 +30,10 @@ export function migrateData(data) {
         return [k, rest]
       }))
     : data.weeks
-  return { ...data, due_dates: dd, milestones: ms, weeks }
+  // Ensure all DD/MS items have stable IDs (for task association)
+  dd = dd.map(x => x.id ? x : { ...x, id: genId() })
+  ms = ms.map(x => x.id ? x : { ...x, id: genId() })
+  return { ...data, due_dates: dd, milestones: ms, weeks, tasks: data.tasks || [] }
 }
 
 const emptyWeek = () => ({ entries: {}, blockers: [] })
@@ -38,6 +45,7 @@ export const getDueDates   = (data)           => data.due_dates || []
 export const getMilestones = (data)           => data.milestones || []
 export const getBlockers   = (data, key)      => wk(data, key).blockers || []
 export const getFullWeek   = (data, key)      => ({ ...wk(data, key), due_dates: data.due_dates || [], milestones: data.milestones || [] })
+export const getTasks      = (data)           => data.tasks || []
 
 function updateWeek(data, key, fn) {
   return { ...data, weeks: { ...data.weeks, [key]: fn(wk(data, key)) } }
@@ -47,3 +55,4 @@ export const setEntries    = (data, key, ds, v) => updateWeek(data, key, w => ({
 export const setDueDates   = (data, v)           => ({ ...data, due_dates: v })
 export const setMilestones = (data, v)           => ({ ...data, milestones: v })
 export const setBlockers   = (data, key, v)      => updateWeek(data, key, w => ({ ...w, blockers: v }))
+export const setTasks      = (data, v)           => ({ ...data, tasks: v })

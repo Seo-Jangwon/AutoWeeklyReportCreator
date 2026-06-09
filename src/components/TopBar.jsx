@@ -57,7 +57,7 @@ function TabSwitcher({ tab, onChange }) {
     <div style={{
       display: 'flex', background: C.bg3, borderRadius: 8, padding: 2, gap: 2,
     }}>
-      {[['week', '주간보기'], ['planning', '플래닝']].map(([key, label]) => (
+      {[['week', '주간보기'], ['planning', '플래닝'], ['flow', '플로우']].map(([key, label]) => (
         <button
           key={key}
           onClick={() => onChange(key)}

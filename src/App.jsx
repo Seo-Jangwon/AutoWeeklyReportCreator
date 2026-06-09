@@ -2,18 +2,20 @@ import { useState, useEffect, useCallback } from 'react'
 import { C } from './utils/colors'
 import { weekDates, weekKey, weekFriday, addWeeks, toISO, fmt, fmtDateStr } from './utils/dates'
 import {
-  DEFAULT_DATA, migrateData,
-  getEntries, getDueDates, getMilestones, getBlockers, getFullWeek,
-  setEntries, setDueDates, setMilestones, setBlockers,
+  DEFAULT_DATA, migrateData, genId,
+  getEntries, getDueDates, getMilestones, getBlockers, getFullWeek, getTasks,
+  setEntries, setDueDates, setMilestones, setBlockers, setTasks,
 } from './utils/data'
 import TopBar from './components/TopBar'
 import WeekGrid from './components/WeekGrid'
 import BottomSections from './components/BottomSections'
 import PlanningView from './components/PlanningView'
+import FlowView from './components/FlowView'
 import AddEntryDialog from './components/dialogs/AddEntryDialog'
 import AddDueDateDialog from './components/dialogs/AddDueDateDialog'
 import AddMilestoneDialog from './components/dialogs/AddMilestoneDialog'
 import SimpleTextDialog from './components/dialogs/SimpleTextDialog'
+import AddTaskDialog from './components/dialogs/AddTaskDialog'
 import ProjectManagerDialog from './components/dialogs/ProjectManagerDialog'
 import SettingsDialog from './components/dialogs/SettingsDialog'
 import OutputDialog from './components/dialogs/OutputDialog'
@@ -43,7 +45,12 @@ export default function App() {
   const [tab, setTab]       = useState('week')
 
   useEffect(() => {
-    loadStore().then(d => setData(migrateData(d || { ...DEFAULT_DATA })))
+    loadStore().then(d => {
+      const migrated = migrateData(d || { ...DEFAULT_DATA })
+      setData(migrated)
+      // persist immediately so any newly-generated DD/MS IDs are saved
+      persistStore(migrated)
+    })
   }, [])
 
   const mutate = useCallback((newData) => {
@@ -72,6 +79,7 @@ export default function App() {
   const onAddDD        = () => setDialog({ t: 'addDD' })
   const onEditDD       = (idx) => setDialog({ t: 'editDD', idx })
   const onDeleteDD     = (idx) => mutate(setDueDates(data, getDueDates(data).filter((_, i) => i !== idx)))
+
   const onToggleDoneDD = (idx) => mutate(setDueDates(data, getDueDates(data).map((x, i) => {
     if (i !== idx) return x
     const done = !x.done
@@ -91,6 +99,16 @@ export default function App() {
     const { completedAt: _, ...rest } = x
     return { ...rest, done }
   })))
+
+  // ── Task (Flow) handlers ─────────────────────────────────────────────────
+  const onAddTask    = (project) => setDialog({ t: 'addTask', project: project || '' })
+  const onEditTask   = (task)    => setDialog({ t: 'editTask', task })
+  const onDeleteTask = (id)      => mutate(setTasks(data, getTasks(data).filter(t => t.id !== id)))
+  const onImportTasks = (newTasks) => {
+    const existing = new Set(getTasks(data).map(t => `${t.startDate}|${t.title}`))
+    const toAdd = newTasks.filter(t => !existing.has(`${t.startDate}|${t.title}`))
+    if (toAdd.length) mutate(setTasks(data, [...getTasks(data), ...toAdd]))
+  }
 
   // ── Blocker handlers ──────────────────────────────────────────────────────
   const onAddBL    = () => setDialog({ t: 'addBL' })
@@ -185,6 +203,10 @@ export default function App() {
         />
       )}
 
+      {tab === 'flow' && (
+        <FlowView data={data} onAdd={onAddTask} onEdit={onEditTask} onDelete={onDeleteTask} onImport={onImportTasks} />
+      )}
+
       {/* ── Dialogs ─────────────────────────────────────────────────────── */}
       {dialog?.t === 'addEntry' && (
         <AddEntryDialog projects={data.projects} dayLabel={dialog.dayLabel} onClose={close}
@@ -196,19 +218,19 @@ export default function App() {
       )}
       {dialog?.t === 'addDD' && (
         <AddDueDateDialog projects={data.projects} onClose={close}
-          onSubmit={item => { mutate(setDueDates(data, [...getDueDates(data), item])); close() }} />
+          onSubmit={item => { mutate(setDueDates(data, [...getDueDates(data), { ...item, id: item.id ?? genId() }])); close() }} />
       )}
       {dialog?.t === 'editDD' && (
         <AddDueDateDialog projects={data.projects} initial={getDueDates(data)[dialog.idx]} onClose={close}
-          onSubmit={item => { mutate(setDueDates(data, getDueDates(data).map((x, i) => i === dialog.idx ? item : x))); close() }} />
+          onSubmit={item => { mutate(setDueDates(data, getDueDates(data).map((x, i) => i === dialog.idx ? { ...item, id: x.id ?? genId() } : x))); close() }} />
       )}
       {dialog?.t === 'addMS' && (
         <AddMilestoneDialog projects={data.projects} onClose={close}
-          onSubmit={item => { mutate(setMilestones(data, [...getMilestones(data), item])); close() }} />
+          onSubmit={item => { mutate(setMilestones(data, [...getMilestones(data), { ...item, id: item.id ?? genId() }])); close() }} />
       )}
       {dialog?.t === 'editMS' && (
         <AddMilestoneDialog projects={data.projects} initial={getMilestones(data)[dialog.idx]} onClose={close}
-          onSubmit={item => { mutate(setMilestones(data, getMilestones(data).map((x, i) => i === dialog.idx ? item : x))); close() }} />
+          onSubmit={item => { mutate(setMilestones(data, getMilestones(data).map((x, i) => i === dialog.idx ? { ...item, id: x.id ?? genId() } : x))); close() }} />
       )}
       {dialog?.t === 'addBL' && (
         <SimpleTextDialog title="Blocker 추가" onClose={close}
@@ -217,6 +239,24 @@ export default function App() {
       {dialog?.t === 'editBL' && (
         <SimpleTextDialog title="Blocker 수정" initial={getBlockers(data, wk)[dialog.idx]} onClose={close}
           onSubmit={t => { mutate(setBlockers(data, wk, getBlockers(data, wk).map((x, i) => i === dialog.idx ? t : x))); close() }} />
+      )}
+      {dialog?.t === 'addTask' && (
+        <AddTaskDialog
+          projects={data.projects} tasks={getTasks(data)}
+          dueDates={getDueDates(data)} milestones={getMilestones(data)}
+          initialProject={dialog.project}
+          onClose={close}
+          onSubmit={task => { mutate(setTasks(data, [...getTasks(data), task])); close() }}
+        />
+      )}
+      {dialog?.t === 'editTask' && (
+        <AddTaskDialog
+          projects={data.projects} tasks={getTasks(data)}
+          dueDates={getDueDates(data)} milestones={getMilestones(data)}
+          initial={dialog.task}
+          onClose={close}
+          onSubmit={task => { mutate(setTasks(data, getTasks(data).map(t => t.id === task.id ? task : t))); close() }}
+        />
       )}
       {dialog?.t === 'projects' && (
         <ProjectManagerDialog data={data} onClose={close} onChange={mutate} />
