@@ -33,7 +33,29 @@ export function migrateData(data) {
   // Ensure all DD/MS items have stable IDs (for task association)
   dd = dd.map(x => x.id ? x : { ...x, id: genId() })
   ms = ms.map(x => x.id ? x : { ...x, id: genId() })
-  return { ...data, due_dates: dd, milestones: ms, weeks, tasks: data.tasks || [] }
+
+  // Migrate entries: text → title + content
+  const finalWeeks = Object.fromEntries(
+    Object.entries(weeks).map(([k, w]) => {
+      const entries = Object.fromEntries(
+        Object.entries(w.entries || {}).map(([ds, dayEntries]) => [
+          ds,
+          (dayEntries || []).map(e =>
+            e.title !== undefined ? e : {
+              project: e.project ?? '',
+              title: e.text ?? '',
+              content: '',
+              predecessorIds: [],
+              taskId: null,
+            }
+          ),
+        ])
+      )
+      return [k, { ...w, entries }]
+    })
+  )
+
+  return { ...data, due_dates: dd, milestones: ms, weeks: finalWeeks, tasks: data.tasks || [] }
 }
 
 const emptyWeek = () => ({ entries: {}, blockers: [] })

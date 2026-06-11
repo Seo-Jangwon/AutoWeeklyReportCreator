@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { C, projectColor } from '../utils/colors'
+import { renderLines } from '../utils/content'
 
 export default function EntryCard({ entry, onEdit, onDelete }) {
   const [hovered, setHovered] = useState(false)
   const col = projectColor(entry.project)
+  const title = entry.title ?? entry.text ?? ''
+  const hasContent = (entry.content || '').trim().length > 0
 
   return (
     <div
@@ -24,17 +27,18 @@ export default function EntryCard({ entry, onEdit, onDelete }) {
       <div style={{ width: 3, background: col, flexShrink: 0 }} />
       <div style={{ padding: '6px 28px 6px 8px', flex: 1, minWidth: 0 }}>
         {entry.project && (
-          <div style={{
-            color: col, fontSize: 10, fontWeight: 700,
-            marginBottom: 2, lineHeight: 1.2,
-            letterSpacing: 0.2,
-          }}>
+          <div style={{ color: col, fontSize: 10, fontWeight: 700, marginBottom: 2, lineHeight: 1.2, letterSpacing: 0.2 }}>
             {entry.project}
           </div>
         )}
-        <div style={{ color: C.fg, fontSize: 12, lineHeight: 1.55, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-          {entry.text}
+        <div style={{ color: C.fg, fontSize: 12, fontWeight: 600, lineHeight: 1.4, wordBreak: 'break-word' }}>
+          {title}
         </div>
+        {hasContent && (
+          <div style={{ marginTop: 3 }}>
+            {renderLines(entry.content)}
+          </div>
+        )}
       </div>
       <button
         onClick={(e) => { e.stopPropagation(); onDelete() }}

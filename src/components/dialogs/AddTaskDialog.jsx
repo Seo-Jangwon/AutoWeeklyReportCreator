@@ -19,6 +19,7 @@ export default function AddTaskDialog({ projects, tasks, dueDates = [], mileston
   const [start, setStart]           = useState(initial?.startDate ?? toISO(new Date()))
   const [end, setEnd]               = useState(initial?.endDate ?? toISO(new Date()))
   const [preds, setPreds]           = useState(initial?.predecessors ?? [])
+  const [notes, setNotes]           = useState(initial?.notes ?? '')
   const [dueDateId, setDueDateId]   = useState(initial?.dueDateId ?? '')
   const [milestoneId, setMilestoneId] = useState(initial?.milestoneId ?? '')
   const [done, setDone]             = useState(initial?.done ?? false)
@@ -43,6 +44,7 @@ export default function AddTaskDialog({ projects, tasks, dueDates = [], mileston
       id: initial?.id ?? genId(),
       project,
       title: title.trim(),
+      notes,
       startDate: start,
       endDate: end,
       predecessors: preds,
@@ -103,6 +105,21 @@ export default function AddTaskDialog({ projects, tasks, dueDates = [], mileston
               종료일이 시작일보다 빠릅니다
             </span>
           )}
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label style={{ display: 'block', color: C.fg2, fontSize: 12, marginBottom: 5 }}>
+            내용&nbsp;<span style={{ color: C.fg3, fontWeight: 400 }}>(선택)</span>
+          </label>
+          <textarea
+            value={notes}
+            rows={2}
+            onChange={e => setNotes(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) submit() }}
+            placeholder={'- 세부 내용 1\n- 세부 내용 2'}
+            style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+          />
         </div>
 
         {/* Predecessors */}

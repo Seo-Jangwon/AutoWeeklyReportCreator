@@ -1,9 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { C } from '../utils/colors'
 
 export default function Modal({ children, onClose, width = 460, title }) {
+  const downRef = useRef(null)
+
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -12,7 +14,8 @@ export default function Modal({ children, onClose, width = 460, title }) {
 
   return createPortal(
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onMouseDown={(e) => { downRef.current = e.target }}
+      onClick={(e) => { if (e.target === e.currentTarget && downRef.current === e.currentTarget) onClose() }}
       style={{
         position: 'fixed', inset: 0,
         background: 'rgba(0,0,0,0.65)',

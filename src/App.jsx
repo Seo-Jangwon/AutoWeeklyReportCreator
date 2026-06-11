@@ -109,6 +109,13 @@ export default function App() {
     const toAdd = newTasks.filter(t => !existing.has(`${t.startDate}|${t.title}`))
     if (toAdd.length) mutate(setTasks(data, [...getTasks(data), ...toAdd]))
   }
+  const onToggleDoneTask = (id) => mutate(setTasks(data, getTasks(data).map(t => {
+    if (t.id !== id) return t
+    const done = !t.done
+    if (done) return { ...t, done, completedAt: toISO(new Date()) }
+    const { completedAt: _, ...rest } = t
+    return { ...rest, done }
+  })))
 
   // ── Blocker handlers ──────────────────────────────────────────────────────
   const onAddBL    = () => setDialog({ t: 'addBL' })
@@ -126,7 +133,7 @@ export default function App() {
       for (const e of (wkData.entries[ds] || [])) {
         if (!projMap[e.project])       projMap[e.project] = {}
         if (!projMap[e.project][tag])  projMap[e.project][tag] = []
-        projMap[e.project][tag].push(e.text)
+        projMap[e.project][tag].push(e)
       }
     }
     const friday  = weekFriday(dates[0])
@@ -141,9 +148,16 @@ export default function App() {
       Object.entries(projMap).forEach(([proj, dateMap], gi) => {
         if (gi > 0) lines.push('')
         lines.push(`[${proj || '기타'}]`)
-        for (const [tag, txts] of Object.entries(dateMap)) {
+        for (const [tag, items] of Object.entries(dateMap)) {
           lines.push(`(${tag})`)
-          txts.forEach(txt => lines.push(`- ${txt}`))
+          items.forEach(e => {
+            const entryTitle = e.title ?? e.text ?? ''
+            lines.push(`- ${entryTitle}`)
+            const contentStr = e.content ?? ''
+            contentStr.split('\n').map(l => l.trim()).filter(Boolean).forEach(l => {
+              lines.push(`  - ${l.startsWith('- ') ? l.slice(2) : l}`)
+            })
+          })
         }
       })
     } else {
@@ -204,17 +218,57 @@ export default function App() {
       )}
 
       {tab === 'flow' && (
-        <FlowView data={data} onAdd={onAddTask} onEdit={onEditTask} onDelete={onDeleteTask} onImport={onImportTasks} />
+        <FlowView data={data} onAdd={onAddTask} onEdit={onEditTask} onDelete={onDeleteTask} onImport={onImportTasks} onToggleDone={onToggleDoneTask} />
       )}
 
       {/* ── Dialogs ─────────────────────────────────────────────────────── */}
       {dialog?.t === 'addEntry' && (
-        <AddEntryDialog projects={data.projects} dayLabel={dialog.dayLabel} onClose={close}
-          onSubmit={e => { mutate(setEntries(data, wk, dialog.ds, [...getEntries(data, wk, dialog.ds), e])); close() }} />
+        <AddEntryDialog projects={data.projects} tasks={getTasks(data)} dayLabel={dialog.dayLabel} onClose={close}
+          onSubmit={entry => {
+            let nd = data
+            let saved = entry
+            if (entry.predecessorIds?.length > 0) {
+              const taskId = genId()
+              nd = setTasks(nd, [...getTasks(nd), {
+                id: taskId, project: entry.project, title: entry.title, notes: entry.content,
+                startDate: dialog.ds, endDate: dialog.ds,
+                predecessors: entry.predecessorIds, dueDateId: null, milestoneId: null, done: false,
+              }])
+              saved = { ...saved, taskId }
+            }
+            mutate(setEntries(nd, wk, dialog.ds, [...getEntries(nd, wk, dialog.ds), saved]))
+            close()
+          }}
+        />
       )}
       {dialog?.t === 'editEntry' && (
-        <AddEntryDialog projects={data.projects} dayLabel={dialog.dayLabel} initial={dialog.entry} onClose={close}
-          onSubmit={e => { mutate(setEntries(data, wk, dialog.ds, getEntries(data, wk, dialog.ds).map((x, i) => i === dialog.idx ? e : x))); close() }} />
+        <AddEntryDialog projects={data.projects} tasks={getTasks(data)} dayLabel={dialog.dayLabel} initial={dialog.entry} onClose={close}
+          onSubmit={entry => {
+            let nd = data
+            let saved = entry
+            if (entry.predecessorIds?.length > 0) {
+              if (entry.taskId && getTasks(nd).find(t => t.id === entry.taskId)) {
+                nd = setTasks(nd, getTasks(nd).map(t =>
+                  t.id === entry.taskId ? { ...t, predecessors: entry.predecessorIds, notes: entry.content } : t
+                ))
+              } else {
+                const taskId = genId()
+                nd = setTasks(nd, [...getTasks(nd), {
+                  id: taskId, project: entry.project, title: entry.title, notes: entry.content,
+                  startDate: dialog.ds, endDate: dialog.ds,
+                  predecessors: entry.predecessorIds, dueDateId: null, milestoneId: null, done: false,
+                }])
+                saved = { ...saved, taskId }
+              }
+            } else if (entry.taskId) {
+              nd = setTasks(nd, getTasks(nd).map(t =>
+                t.id === entry.taskId ? { ...t, predecessors: [] } : t
+              ))
+            }
+            mutate(setEntries(nd, wk, dialog.ds, getEntries(nd, wk, dialog.ds).map((x, i) => i === dialog.idx ? saved : x)))
+            close()
+          }}
+        />
       )}
       {dialog?.t === 'addDD' && (
         <AddDueDateDialog projects={data.projects} onClose={close}
