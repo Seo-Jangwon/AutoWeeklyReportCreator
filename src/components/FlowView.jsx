@@ -1,25 +1,48 @@
-import { useMemo, useRef, useEffect, useState, useCallback } from 'react'
-import { Plus, ZoomIn, ZoomOut, Pencil, Trash2, Download, CheckCircle2, Circle } from 'lucide-react'
+import { useMemo, useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
+import {
+  Plus, ZoomIn, ZoomOut, Pencil, Trash2, Download, Check,
+  ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, LocateFixed,
+} from 'lucide-react'
 import Modal, { ModalFooter } from './Modal'
 import { C, projectColor } from '../utils/colors'
-import { toISO, fmtDateStr } from '../utils/dates'
+import { toISO, fmtDateStr, parseDate } from '../utils/dates'
 import { getTasks, getDueDates, getMilestones, genId } from '../utils/data'
 import { renderLines } from '../utils/content'
 
-const LABEL_W    = 185
+const LABEL_W    = 200
 const HEADER_H   = 30
-const MS_STRIP_H = 24
-const BODY_Y     = HEADER_H + MS_STRIP_H
-const SWIM_HDR   = 27
+const SWIM_HDR   = 30
+const MS_HDR     = 24
+const LOOSE_HDR  = 18
 const ROW_H      = 32
 const ROW_H_TALL = 46
 const ZOOM_PX    = [4, 8, 14, 20, 30, 40]
+const UNASSIGNED = '(미지정)'
 
 function getTaskH(t) { return ((t.notes || '').trim() || t.title.includes('\n')) ? ROW_H_TALL : ROW_H }
 
-function parseDate(s) {
-  const [y, m, d] = s.split('-').map(Number)
-  return new Date(y, m - 1, d)
+function addDaysISO(s, n) {
+  const d = parseDate(s)
+  if (!d) return s
+  d.setDate(d.getDate() + n)
+  return toISO(d)
+}
+
+// Rough text width: CJK glyphs ≈ fontSize, latin ≈ 0.62 × fontSize
+function estTextW(s, fs = 10) {
+  let w = 0
+  for (const ch of s) w += ch.codePointAt(0) >= 0x1100 ? fs : fs * 0.62
+  return w
+}
+function truncToWidth(s, maxW, fs = 10) {
+  let w = 0, out = ''
+  for (const ch of s) {
+    const cw = ch.codePointAt(0) >= 0x1100 ? fs : fs * 0.62
+    if (w + cw > maxW) return out + '…'
+    w += cw
+    out += ch
+  }
+  return out
 }
 
 // ── Import Dialog ──────────────────────────────────────────────────────────────
@@ -29,7 +52,7 @@ function ImportDialog({ data, existingTasks, onClose, onImport }) {
     for (const [, wkData] of Object.entries(data.weeks || {})) {
       for (const [ds, entries] of Object.entries(wkData.entries || {})) {
         for (const e of (entries || [])) {
-          result.push({ ds, project: e.project || '', text: e.title ?? e.text ?? '', notes: e.content || '' })
+          result.push({ ds, project: e.project || '', text: e.title ?? e.text ?? '', notes: e.content || '', milestoneId: e.milestoneId || null })
         }
       }
     }
@@ -64,7 +87,7 @@ function ImportDialog({ data, existingTasks, onClose, onImport }) {
         endDate: e.ds,
         predecessors: [],
         dueDateId: null,
-        milestoneId: null,
+        milestoneId: e.milestoneId || null,
         done: true,
         completedAt: e.ds,
       }))
@@ -152,7 +175,7 @@ function ImportDialog({ data, existingTasks, onClose, onImport }) {
 }
 
 // ── Flow Controls ──────────────────────────────────────────────────────────────
-function FlowControls({ zoomIdx, setZoomIdx, onAdd, onImport }) {
+function FlowControls({ zoomIdx, onZoomIn, onZoomOut, allCollapsed, onToggleAll, onToday, onAdd, onImport }) {
   const btnBase = {
     background: C.bg3, color: C.fg2, borderRadius: 5,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -163,12 +186,32 @@ function FlowControls({ zoomIdx, setZoomIdx, onAdd, onImport }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
       <span style={{ color: C.accent2, fontWeight: 700, fontSize: 12 }}>플로우</span>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 10 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.fg3, fontSize: 10 }}>
+          <span style={{ width: 7, height: 7, background: '#94e2d5', transform: 'rotate(45deg)', display: 'inline-block', borderRadius: 1 }} />
+          마일스톤
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.fg3, fontSize: 10 }}>
+          <span style={{ color: '#f9e2af', fontSize: 11, lineHeight: 1 }}>⚑</span>
+          마감일
+        </span>
+        <span style={{ color: C.fg3, fontSize: 10, opacity: 0.7 }}>막대 드래그: 이동 · 가장자리: 기간 조절 · Ctrl+휠: 줌</span>
+      </div>
+
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button style={btnBase} onClick={() => setZoomIdx(i => Math.max(0, i - 1))} onMouseEnter={hov} onMouseLeave={unv} title="축소">
+        <button style={btnBase} onClick={onToggleAll} onMouseEnter={hov} onMouseLeave={unv} title={allCollapsed ? '전체 펼치기' : '전체 접기'}>
+          {allCollapsed ? <ChevronsUpDown size={13} strokeWidth={2} /> : <ChevronsDownUp size={13} strokeWidth={2} />}
+        </button>
+        <button style={btnBase} onClick={onToday} onMouseEnter={hov} onMouseLeave={unv} title="오늘로 이동">
+          <LocateFixed size={13} strokeWidth={2} />
+        </button>
+        <button style={btnBase} onClick={onZoomOut} onMouseEnter={hov} onMouseLeave={unv} title="축소">
           <ZoomOut size={13} strokeWidth={2} />
         </button>
         <span style={{ color: C.fg3, fontSize: 11, width: 42, textAlign: 'center' }}>{ZOOM_PX[zoomIdx]}px/일</span>
-        <button style={btnBase} onClick={() => setZoomIdx(i => Math.min(ZOOM_PX.length - 1, i + 1))} onMouseEnter={hov} onMouseLeave={unv} title="확대">
+        <button style={btnBase} onClick={onZoomIn} onMouseEnter={hov} onMouseLeave={unv} title="확대">
           <ZoomIn size={13} strokeWidth={2} />
         </button>
         <button
@@ -203,7 +246,7 @@ function FlowControls({ zoomIdx, setZoomIdx, onAdd, onImport }) {
 }
 
 // ── Task Detail Panel ─────────────────────────────────────────────────────────
-function TaskDetailPanel({ task, tasks, dueDates, milestones, onEdit, onDelete, onToggleDone, onClose }) {
+function TaskDetailPanel({ task, tasks, dueDates, milestones, onEdit, onDelete, onClose }) {
   const col      = projectColor(task.project)
   const titleLines = task.title.split('\n')
   const mainTitle  = titleLines[0]
@@ -234,7 +277,6 @@ function TaskDetailPanel({ task, tasks, dueDates, milestones, onEdit, onDelete, 
 
         <div style={{ color: C.fg3, fontSize: 11 }}>
           {fmtDateStr(task.startDate)} ~ {fmtDateStr(task.endDate)}
-          {task.done && <span style={{ marginLeft: 8, color: C.success, fontWeight: 600 }}>완료</span>}
         </div>
 
         {predTasks.length > 0 && (
@@ -257,12 +299,12 @@ function TaskDetailPanel({ task, tasks, dueDates, milestones, onEdit, onDelete, 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {linkedDD && (
               <span style={{ fontSize: 11, color: '#f9e2af', background: '#f9e2af18', padding: '3px 8px', borderRadius: 4 }}>
-                D {linkedDD.task} → {linkedDD.date}
+                ⚑ {linkedDD.task} → {fmtDateStr(linkedDD.date)}
               </span>
             )}
             {linkedMS && (
               <span style={{ fontSize: 11, color: '#94e2d5', background: '#94e2d518', padding: '3px 8px', borderRadius: 4 }}>
-                M {linkedMS.detail} → {linkedMS.target}
+                ◆ {linkedMS.detail} → {fmtDateStr(linkedMS.target)}
               </span>
             )}
           </div>
@@ -280,16 +322,6 @@ function TaskDetailPanel({ task, tasks, dueDates, milestones, onEdit, onDelete, 
           onMouseLeave={e => e.currentTarget.style.background = 'rgba(243,139,168,0.12)'}
         >삭제</button>
         <button
-          onClick={() => { onToggleDone?.(task.id); onClose() }}
-          style={{
-            background: task.done ? 'rgba(166,227,161,0.15)' : 'rgba(166,227,161,0.06)',
-            color: C.success,
-            padding: '6px 16px', borderRadius: 6, fontSize: 12, transition: 'background 0.1s',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(166,227,161,0.25)'}
-          onMouseLeave={e => e.currentTarget.style.background = task.done ? 'rgba(166,227,161,0.15)' : 'rgba(166,227,161,0.06)'}
-        >{task.done ? '미완료로 변경' : '완료 처리'}</button>
-        <button
           onClick={() => { onEdit(task); onClose() }}
           style={{
             background: C.accent, color: C.bg2,
@@ -303,8 +335,105 @@ function TaskDetailPanel({ task, tasks, dueDates, milestones, onEdit, onDelete, 
   )
 }
 
-// ── Task Label Row ─────────────────────────────────────────────────────────────
-function TaskLabelRow({ task, dueDates, milestones, onEdit, onDelete, onToggleDone, onDetail, hoveredId, connectedIds, onHover, h }) {
+// ── Label column rows ──────────────────────────────────────────────────────────
+function ProjectHeaderRow({ lane, color, onToggle, onAdd }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <div
+      onClick={onToggle}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        height: SWIM_HDR, boxSizing: 'border-box',
+        display: 'flex', alignItems: 'center', gap: 5, padding: '0 8px 0 5px',
+        background: hov ? `${color}1e` : `${color}12`,
+        boxShadow: `inset 0 -1px 0 ${C.bg3}66`,
+        cursor: 'pointer', userSelect: 'none',
+      }}
+      title={lane.isCollapsed ? '펼치기' : '접기'}
+    >
+      {lane.isCollapsed
+        ? <ChevronRight size={12} strokeWidth={2.5} style={{ color: C.fg3, flexShrink: 0 }} />
+        : <ChevronDown size={12} strokeWidth={2.5} style={{ color: C.fg3, flexShrink: 0 }} />}
+      <span style={{
+        color, fontWeight: 700, fontSize: 11, flex: 1,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>{lane.name}</span>
+      {lane.total > 0 && (
+        <span style={{
+          color: C.fg3, fontSize: 9, fontWeight: 700, flexShrink: 0,
+          background: C.bg3, padding: '1px 6px', borderRadius: 8,
+        }}>{lane.total}</span>
+      )}
+      <button
+        onClick={(e) => { e.stopPropagation(); onAdd() }}
+        style={{ color: C.fg3, background: 'transparent', flexShrink: 0, lineHeight: 1, padding: 2 }}
+        onMouseEnter={e => e.currentTarget.style.color = color}
+        onMouseLeave={e => e.currentTarget.style.color = C.fg3}
+        title="이 프로젝트에 작업 추가"
+      ><Plus size={11} strokeWidth={2.5} /></button>
+    </div>
+  )
+}
+
+function MilestoneHeaderRow({ group, color, todayISO, onEditMilestone, onAddTask }) {
+  const [hov, setHov] = useState(false)
+  const { ms, tasks } = group
+  const overdue = !!ms.target && !ms.done && ms.target < todayISO
+  const dispCol = overdue ? C.warn : color
+  return (
+    <div
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      onClick={() => onEditMilestone?.(ms.id)}
+      style={{
+        height: MS_HDR, boxSizing: 'border-box',
+        display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px 0 16px',
+        background: hov ? `${color}14` : `${color}08`,
+        boxShadow: `inset 0 -1px 0 ${C.bg3}44`,
+        cursor: 'pointer', userSelect: 'none',
+      }}
+      title={`마일스톤: ${ms.detail} → ${fmtDateStr(ms.target)}${ms.done ? ' (완료)' : overdue ? ' (지남)' : ''}`}
+    >
+      <span style={{
+        width: 7, height: 7, background: ms.done ? `${dispCol}55` : dispCol,
+        transform: 'rotate(45deg)', flexShrink: 0, borderRadius: 1,
+      }} />
+      <span style={{
+        color: ms.done ? C.fg3 : dispCol, fontSize: 10.5, fontWeight: 600, flex: 1,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        textDecoration: ms.done ? 'line-through' : 'none',
+      }}>{ms.detail}</span>
+      {ms.done && <Check size={10} strokeWidth={3} style={{ color: C.success, flexShrink: 0 }} />}
+      {tasks.length > 0 && (
+        <span style={{
+          color: C.fg3, fontSize: 9, fontWeight: 700, flexShrink: 0,
+          background: C.bg3, padding: '1px 5px', borderRadius: 8,
+        }}>{tasks.length}</span>
+      )}
+      {hov && (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); onEditMilestone?.(ms.id) }}
+            style={{ color: C.fg3, background: 'transparent', padding: 2, flexShrink: 0, lineHeight: 1 }}
+            onMouseEnter={e => e.currentTarget.style.color = C.accent}
+            onMouseLeave={e => e.currentTarget.style.color = C.fg3}
+            title="마일스톤 수정"
+          ><Pencil size={10} strokeWidth={2} /></button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onAddTask() }}
+            style={{ color: C.fg3, background: 'transparent', padding: 2, flexShrink: 0, lineHeight: 1 }}
+            onMouseEnter={e => e.currentTarget.style.color = color}
+            onMouseLeave={e => e.currentTarget.style.color = C.fg3}
+            title="이 마일스톤에 작업 추가"
+          ><Plus size={11} strokeWidth={2.5} /></button>
+        </>
+      )}
+    </div>
+  )
+}
+
+function TaskLabelRow({ task, indent, dueDates, milestones, onEdit, onDelete, onDetail, hoveredId, connectedIds, onHover, h }) {
   const [hov, setHov] = useState(false)
   const col      = projectColor(task.project)
   const linkedDD = task.dueDateId   ? dueDates.find(d => d.id === task.dueDateId)     : null
@@ -322,42 +451,35 @@ function TaskLabelRow({ task, dueDates, milestones, onEdit, onDelete, onToggleDo
       onMouseEnter={() => { setHov(true); onHover(task.id) }}
       onMouseLeave={() => { setHov(false); onHover(null) }}
       style={{
-        height: h, display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        padding: hasContent ? '4px 8px' : '0 8px', gap: 2,
+        height: h, boxSizing: 'border-box',
+        display: 'flex', flexDirection: 'column', justifyContent: 'center',
+        padding: hasContent ? `4px 8px 4px ${indent}px` : `0 8px 0 ${indent}px`, gap: 2,
         background: hov ? `${C.bg3}66` : 'transparent',
         cursor: 'pointer', transition: 'background 0.1s, opacity 0.12s',
-        borderBottom: `1px solid ${C.bg3}33`,
+        boxShadow: `inset 0 -1px 0 ${C.bg3}33`,
         opacity: isDimmed ? 0.22 : 1,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
         <div style={{ width: 3, height: 14, borderRadius: 2, background: col, flexShrink: 0 }} />
         <span style={{
-          flex: 1, color: task.done ? C.fg3 : C.fg2, fontSize: 11,
+          flex: 1, color: C.fg2, fontSize: 11,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          textDecoration: task.done ? 'line-through' : 'none',
         }}>{displayTitle}</span>
         {linkedDD && (
           <span
-            title={`마감: ${linkedDD.task} → ${linkedDD.date}`}
+            title={`마감: ${linkedDD.task} → ${fmtDateStr(linkedDD.date)}`}
             style={{ fontSize: 9, color: '#f9e2af', background: '#f9e2af22', borderRadius: 2, padding: '1px 4px', flexShrink: 0, fontWeight: 700 }}
-          >D</span>
+          >⚑</span>
         )}
         {linkedMS && (
           <span
-            title={`마일스톤: ${linkedMS.detail} → ${linkedMS.target}`}
+            title={`마일스톤: ${linkedMS.detail} → ${fmtDateStr(linkedMS.target)}`}
             style={{ fontSize: 9, color: '#94e2d5', background: '#94e2d522', borderRadius: 2, padding: '1px 4px', flexShrink: 0, fontWeight: 700 }}
-          >M</span>
+          >◆</span>
         )}
         {hov && (
           <>
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleDone?.(task.id) }}
-              style={{ color: task.done ? C.success : C.fg3, background: 'transparent', padding: '2px 3px', flexShrink: 0, lineHeight: 1 }}
-              title={task.done ? '미완료로 변경' : '완료로 변경'}
-              onMouseEnter={e => e.currentTarget.style.color = C.success}
-              onMouseLeave={e => e.currentTarget.style.color = task.done ? C.success : C.fg3}
-            >{task.done ? <CheckCircle2 size={11} strokeWidth={2} /> : <Circle size={11} strokeWidth={2} />}</button>
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(task) }}
               style={{ color: C.fg3, background: 'transparent', padding: '2px 3px', flexShrink: 0, lineHeight: 1 }}
@@ -377,7 +499,7 @@ function TaskLabelRow({ task, dueDates, milestones, onEdit, onDelete, onToggleDo
         <div style={{
           marginLeft: 8, color: C.fg3, fontSize: 9, lineHeight: 1.3,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          opacity: task.done ? 0.45 : 0.7,
+          opacity: 0.7,
         }}>{contentPreview}</div>
       )}
     </div>
@@ -385,7 +507,7 @@ function TaskLabelRow({ task, dueDates, milestones, onEdit, onDelete, onToggleDo
 }
 
 // ── Main FlowView ──────────────────────────────────────────────────────────────
-export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onToggleDone }) {
+export default function FlowView({ data, onAdd, onEdit, onUpdate, onDelete, onImport, onEditMilestone, onEditDueDate }) {
   const tasks      = getTasks(data)
   const dueDates   = getDueDates(data)
   const milestones = getMilestones(data)
@@ -393,13 +515,68 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
   const [showImport, setShowImport] = useState(false)
   const [detailTask, setDetailTask] = useState(null)
   const [hoveredId, setHoveredId]   = useState(null)
+  const [collapsed, setCollapsed]   = useState(() => new Set())
+  const [drag, setDrag]             = useState(null) // { id, mode: 'move'|'l'|'r', x0, delta, moved }
   const dayW         = ZOOM_PX[zoomIdx]
   const containerRef = useRef(null)
+  const zoomAnchor   = useRef(null)
   const todayISO     = toISO(new Date())
 
-  const handleHover = useCallback((id) => setHoveredId(id), [])
+  // Viewport size — chart always fills the visible area even when zoomed out
+  const [viewSize, setViewSize] = useState({ w: 0, h: 0 })
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const measure = () => setViewSize({ w: el.clientWidth, h: el.clientHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
+  const handleHover = useCallback((id) => setHoveredId(id), [])
   const handleImport = (newTasks) => { onImport(newTasks); setShowImport(false) }
+
+  // Zoom keeping the date at the viewport center fixed
+  const changeZoom = (dir) => {
+    const ni = Math.min(ZOOM_PX.length - 1, Math.max(0, zoomIdx + dir))
+    if (ni === zoomIdx) return
+    const el = containerRef.current
+    if (el) {
+      const viewW = el.clientWidth - LABEL_W
+      zoomAnchor.current = { days: (el.scrollLeft + viewW / 2) / dayW, viewW }
+    }
+    setZoomIdx(ni)
+  }
+  const changeZoomRef = useRef(changeZoom)
+  changeZoomRef.current = changeZoom
+
+  // Ctrl + wheel zoom
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const onWheel = (e) => {
+      if (!e.ctrlKey) return
+      e.preventDefault()
+      changeZoomRef.current(e.deltaY < 0 ? 1 : -1)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // Apply in-progress drag to a task's dates
+  function effTask(t) {
+    if (!drag || drag.id !== t.id || !drag.delta) return t
+    if (drag.mode === 'move') {
+      return { ...t, startDate: addDaysISO(t.startDate, drag.delta), endDate: addDaysISO(t.endDate, drag.delta) }
+    }
+    if (drag.mode === 'l') {
+      const ns = addDaysISO(t.startDate, drag.delta)
+      return { ...t, startDate: ns > t.endDate ? t.endDate : ns }
+    }
+    const ne = addDaysISO(t.endDate, drag.delta)
+    return { ...t, endDate: ne < t.startDate ? t.startDate : ne }
+  }
 
   // IDs reachable from hoveredId (self + predecessors + successors)
   const connectedIds = useMemo(() => {
@@ -412,97 +589,154 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
     return ids
   }, [hoveredId, tasks])
 
-  // Group tasks by project, sorted by startDate
-  const groups = useMemo(() => {
-    const map = {}
-    for (const t of tasks) {
-      const key = t.project || '(미지정)'
-      if (!map[key]) map[key] = []
-      map[key].push(t)
-    }
-    return Object.entries(map).map(([proj, ts]) => [
-      proj,
-      [...ts].sort((a, b) => a.startDate.localeCompare(b.startDate)),
-    ])
-  }, [tasks])
+  // ── Lanes: project → { milestone groups, loose tasks, header due-date flags }
+  const lanes = useMemo(() => {
+    const order = []
+    const seen  = new Set()
+    const push  = (p) => { const k = (p || '').trim() || UNASSIGNED; if (!seen.has(k)) { seen.add(k); order.push(k) } }
+    tasks.forEach(t => push(t.project))
+    milestones.forEach(m => push(m.project))
+    dueDates.forEach(d => push(d.project))
 
-  // Time range: cover tasks + milestone targets + padding
+    const linkedDDIds = new Set(tasks.map(t => t.dueDateId).filter(Boolean))
+    const byStart = (a, b) => a.startDate.localeCompare(b.startDate)
+
+    return order.map(name => {
+      const laneTasks = tasks.filter(t => ((t.project || '').trim() || UNASSIGNED) === name)
+      const laneMs    = milestones
+        .filter(m => ((m.project || '').trim() || UNASSIGNED) === name)
+        .sort((a, b) => (a.target || '').localeCompare(b.target || ''))
+      const groups = laneMs.map(ms => ({
+        ms,
+        tasks: laneTasks.filter(t => t.milestoneId === ms.id).sort(byStart),
+      }))
+      const groupedIds = new Set(groups.flatMap(g => g.tasks.map(t => t.id)))
+      const loose = laneTasks.filter(t => !groupedIds.has(t.id)).sort(byStart)
+      const headerDDs = dueDates.filter(d =>
+        ((d.project || '').trim() || UNASSIGNED) === name && !linkedDDIds.has(d.id)
+      )
+      return {
+        name,
+        tasks: laneTasks,
+        groups,
+        loose,
+        headerDDs,
+        total: laneTasks.length,
+      }
+    }).filter(l => l.total > 0 || l.groups.length > 0 || l.headerDDs.length > 0)
+  }, [tasks, milestones, dueDates])
+
+  const laneNames    = lanes.map(l => l.name)
+  const allCollapsed = laneNames.length > 0 && laneNames.every(n => collapsed.has(n))
+  const toggleLane   = (name) => setCollapsed(prev => {
+    const next = new Set(prev)
+    next.has(name) ? next.delete(name) : next.add(name)
+    return next
+  })
+  const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(laneNames))
+
+  // ── Time range: tasks + milestone targets + due dates + padding
   const { rangeStart, totalDays } = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const allDates = [
       ...tasks.flatMap(t => [parseDate(t.startDate), parseDate(t.endDate)]),
       ...milestones.filter(m => m.target).map(m => parseDate(m.target)),
-    ]
+      ...dueDates.filter(d => d.date).map(d => parseDate(d.date)),
+    ].filter(Boolean)
     if (!allDates.length) {
       const s = new Date(today); s.setDate(today.getDate() - 14)
       return { rangeStart: s, totalDays: 70 }
     }
-    const minD = new Date(Math.min(...allDates))
-    const maxD = new Date(Math.max(...allDates))
+    const minD = new Date(Math.min(...allDates, today))
+    const maxD = new Date(Math.max(...allDates, today))
     minD.setDate(minD.getDate() - 7)
     maxD.setDate(maxD.getDate() + 21)
     return { rangeStart: minD, totalDays: Math.max(70, Math.ceil((maxD - minD) / 86400000)) }
-  }, [tasks, milestones])
+  }, [tasks, milestones, dueDates])
 
   function dateToX(dateStr) {
-    return Math.round((parseDate(dateStr) - rangeStart) / 86400000) * dayW
+    const d = parseDate(dateStr)
+    if (!d) return 0
+    return Math.round((d - rangeStart) / 86400000) * dayW
   }
 
-  // Swimlane layout — variable row heights based on whether task has notes
-  const layout = useMemo(() => {
-    let y = BODY_Y
-    const swimlanes = groups.map(([proj, projTasks]) => {
-      const headerY   = y
-      let rowY = y + SWIM_HDR
-      const taskRows = projTasks.map(t => {
-        const h = getTaskH(t)
-        const row = { task: t, rowY, h }
-        rowY += h
-        return row
-      })
-      const height = SWIM_HDR + projTasks.reduce((s, t) => s + getTaskH(t), 0)
-      y += height + 1
-      return { proj, tasks: projTasks, taskRows, headerY, height }
-    })
-    return { swimlanes, totalH: y + 8 }
-  }, [groups])
+  // Extend the chart so it always fills the viewport (zoomed out or short data)
+  const fillDays   = viewSize.w > 0 ? Math.ceil((viewSize.w - LABEL_W) / dayW) + 1 : 0
+  const renderDays = Math.max(totalDays, fillDays)
 
-  // Bar positions (x1, x2, cy) keyed by task id — uses per-task rowY from layout
+  // ── Row layout (label column and SVG share these y positions)
+  const layout = useMemo(() => {
+    let y = HEADER_H
+    const outLanes = lanes.map(lane => {
+      const top = y
+      const isCollapsed = collapsed.has(lane.name)
+      const rows = []
+      y += SWIM_HDR
+      if (!isCollapsed) {
+        for (const g of lane.groups) {
+          const msRow = { kind: 'ms', group: g, y, h: MS_HDR, bottom: 0 }
+          rows.push(msRow)
+          y += MS_HDR
+          for (const t of g.tasks) {
+            const h = getTaskH(t)
+            rows.push({ kind: 'task', task: t, group: g, y, h })
+            y += h
+          }
+          msRow.bottom = y
+        }
+        if (lane.groups.length > 0 && lane.loose.length > 0) {
+          rows.push({ kind: 'loose', y, h: LOOSE_HDR })
+          y += LOOSE_HDR
+        }
+        for (const t of lane.loose) {
+          const h = getTaskH(t)
+          rows.push({ kind: 'task', task: t, y, h })
+          y += h
+        }
+      }
+      return { ...lane, top, rows, height: y - top, isCollapsed }
+    })
+    return { lanes: outLanes, totalH: y + 10 }
+  }, [lanes, collapsed])
+
+  // ── Bar positions keyed by task id (drag-aware)
   const posMap = useMemo(() => {
     const map = {}
-    for (const sl of layout.swimlanes) {
-      for (const { task: t, rowY, h } of sl.taskRows) {
+    for (const lane of layout.lanes) {
+      for (const r of lane.rows) {
+        if (r.kind !== 'task') continue
+        const t  = effTask(r.task)
         const x1 = dateToX(t.startDate)
         const x2 = dateToX(t.endDate) + dayW
-        const cy = rowY + h / 2
-        map[t.id] = { x1, x2, w: Math.max(x2 - x1, dayW), cy }
+        map[r.task.id] = { x1, x2, w: Math.max(x2 - x1, dayW), cy: r.y + r.h / 2, rowY: r.y, h: r.h }
       }
     }
     return map
-  }, [layout, dayW, rangeStart])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, dayW, rangeStart, drag])
 
-  // Month marks
+  // ── Month marks
   const monthMarks = useMemo(() => {
     const marks = []
     const d = new Date(rangeStart); d.setDate(1)
     for (let i = 0; i < 120; i++) {
       const x = Math.round((d - rangeStart) / 86400000) * dayW
-      if (x > totalDays * dayW) break
+      if (x > renderDays * dayW) break
       if (x >= 0) marks.push({ x, label: `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}` })
       d.setMonth(d.getMonth() + 1)
     }
     return marks
-  }, [rangeStart, totalDays, dayW])
+  }, [rangeStart, renderDays, dayW])
 
-  // Monday lines — show MM/DD date label when zoom >= 14px/day
+  // ── Monday lines — show MM/DD date label when zoom >= 14px/day
   const weekLines = useMemo(() => {
     const lines = []
     const d = new Date(rangeStart)
     const dow = d.getDay()
     d.setDate(d.getDate() + (dow === 1 ? 0 : ((8 - dow) % 7 || 7)))
-    for (let i = 0; i <= totalDays / 7 + 1; i++) {
+    for (let i = 0; i <= renderDays / 7 + 1; i++) {
       const x = Math.round((d - rangeStart) / 86400000) * dayW
-      if (x >= 0 && x <= totalDays * dayW) {
+      if (x >= 0 && x <= renderDays * dayW) {
         lines.push({
           x,
           dateLabel: dayW >= 14
@@ -513,9 +747,24 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
       d.setDate(d.getDate() + 7)
     }
     return lines
-  }, [rangeStart, totalDays, dayW])
+  }, [rangeStart, renderDays, dayW])
 
-  // Pre-compute arrows with fixed routing
+  // ── Weekend shading (visible at 8px/day and above)
+  const weekendBands = useMemo(() => {
+    if (dayW < 8) return []
+    const bands = []
+    const d = new Date(rangeStart)
+    // jump to first Saturday
+    d.setDate(d.getDate() + ((6 - d.getDay()) % 7))
+    while ((d - rangeStart) / 86400000 <= renderDays) {
+      const x = Math.round((d - rangeStart) / 86400000) * dayW
+      bands.push({ x, w: dayW * 2 })
+      d.setDate(d.getDate() + 7)
+    }
+    return bands
+  }, [rangeStart, renderDays, dayW])
+
+  // ── Dependency arrows
   const arrows = useMemo(() => {
     const result = []
     for (const t of tasks) {
@@ -523,16 +772,14 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
         const from = posMap[predId]
         const to   = posMap[t.id]
         if (!from || !to) continue
-        const x1 = from.x2, y1 = from.cy   // right edge of predecessor
-        const x2 = to.x1,   y2 = to.cy     // left edge of successor
+        const x1 = from.x2, y1 = from.cy
+        const x2 = to.x1,   y2 = to.cy
         let pathD, arrowDir
         if (x2 >= x1 + 4) {
-          // Forward: H-V-H through midpoint between the two bars
           const midX = (x1 + x2) / 2
           pathD = `M${x1},${y1} H${midX} V${y2} H${x2}`
           arrowDir = 'right'
         } else {
-          // Backward / overlap: elbow extends right then wraps back left
           const elbowX = Math.max(x1, x2) + Math.max(dayW * 2, 24)
           pathD = `M${x1},${y1} H${elbowX} V${y2} H${x2}`
           arrowDir = 'left'
@@ -543,22 +790,72 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
     return result
   }, [tasks, posMap, dayW])
 
-  const todayX   = dateToX(todayISO)
-  const svgW     = totalDays * dayW
-  const emptyState = !tasks.length
+  const todayX     = dateToX(todayISO)
+  const svgW       = renderDays * dayW
+  const svgH       = Math.max(layout.totalH, viewSize.h > 0 ? viewSize.h - 2 : 0)
+  const emptyState = layout.lanes.length === 0
 
-  // Scroll to show today when zoom changes
-  useEffect(() => {
+  const scrollToToday = useCallback(() => {
     const el = containerRef.current
     if (!el) return
     const viewW = el.clientWidth - LABEL_W
     el.scrollLeft = Math.max(0, todayX - viewW * 0.33)
-  }, [zoomIdx])
+  }, [todayX])
+
+  // After a zoom change, restore the anchored center date; on first mount, jump to today
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (zoomAnchor.current) {
+      const { days, viewW } = zoomAnchor.current
+      zoomAnchor.current = null
+      el.scrollLeft = Math.max(0, days * dayW - viewW / 2)
+    } else {
+      scrollToToday()
+    }
+  }, [zoomIdx]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Drag handlers (move / resize bars, click = detail)
+  const startDrag = (e, t, mode) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    setDrag({ id: t.id, mode, x0: e.clientX, delta: 0, moved: false })
+  }
+  const moveDrag = (e) => {
+    if (!drag) return
+    const dx = e.clientX - drag.x0
+    const delta = Math.round(dx / dayW)
+    const moved = drag.moved || Math.abs(dx) > 3
+    if (delta !== drag.delta || moved !== drag.moved) setDrag({ ...drag, delta, moved })
+  }
+  const endDrag = (e, t) => {
+    if (!drag || drag.id !== t.id) return
+    if (drag.moved && drag.delta !== 0) onUpdate?.(effTask(t))
+    else if (!drag.moved) setDetailTask(t)
+    setDrag(null)
+  }
+
+  // ── Due-date flag (deadline marker) ─────────────────────────────────────────
+  const renderFlag = (key, x, cy, col, { faded = false, title = '', onClick = null } = {}) => (
+    <g
+      key={key}
+      opacity={faded ? 0.35 : 0.95}
+      style={onClick ? { cursor: 'pointer' } : undefined}
+      onClick={onClick || undefined}
+    >
+      <line x1={x} y1={cy - 8} x2={x} y2={cy + 7} stroke={col} strokeWidth={1.5} />
+      <path d={`M${x},${cy - 8} L${x + 8},${cy - 5} L${x},${cy - 2} Z`} fill={col} />
+      <title>{title}</title>
+    </g>
+  )
 
   return (
     <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '10px 18px', gap: 10 }}>
       <FlowControls
-        zoomIdx={zoomIdx} setZoomIdx={setZoomIdx}
+        zoomIdx={zoomIdx} onZoomIn={() => changeZoom(1)} onZoomOut={() => changeZoom(-1)}
+        allCollapsed={allCollapsed} onToggleAll={toggleAll}
+        onToday={scrollToToday}
         onAdd={() => onAdd('')}
         onImport={() => setShowImport(true)}
       />
@@ -570,7 +867,7 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
       {detailTask && (
         <TaskDetailPanel
           task={detailTask} tasks={tasks} dueDates={dueDates} milestones={milestones}
-          onEdit={onEdit} onDelete={onDelete} onToggleDone={onToggleDone}
+          onEdit={onEdit} onDelete={onDelete}
           onClose={() => setDetailTask(null)}
         />
       )}
@@ -588,7 +885,7 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
             작업을 추가하거나 주간 항목에서 가져와서 플로우 차트를 시작하세요
           </div>
         ) : (
-          <div style={{ display: 'flex', width: LABEL_W + svgW, height: layout.totalH, minHeight: '100%' }}>
+          <div style={{ display: 'flex', width: LABEL_W + svgW, height: svgH, minHeight: '100%' }}>
 
             {/* ── Sticky label column ── */}
             <div style={{
@@ -596,61 +893,60 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
               width: LABEL_W, flexShrink: 0,
               borderRight: `1px solid ${C.bg3}`,
               background: C.bg2,
-              height: layout.totalH,
+              height: svgH,
             }}>
               {/* Header */}
               <div style={{
-                height: HEADER_H, borderBottom: `1px solid ${C.bg3}44`,
+                height: HEADER_H, boxSizing: 'border-box',
+                boxShadow: `inset 0 -1px 0 ${C.bg3}`,
                 display: 'flex', alignItems: 'center', padding: '0 12px',
               }}>
-                <span style={{ color: C.fg3, fontSize: 10, fontWeight: 600, letterSpacing: 0.5 }}>프로젝트 / 작업</span>
+                <span style={{ color: C.fg3, fontSize: 10, fontWeight: 600, letterSpacing: 0.5 }}>프로젝트 / 마일스톤 / 작업</span>
               </div>
 
-              {/* Milestone strip label */}
-              <div style={{
-                height: MS_STRIP_H, borderBottom: `1px solid ${C.bg3}`,
-                display: 'flex', alignItems: 'center', padding: '0 12px', gap: 6,
-                background: '#94e2d508',
-              }}>
-                <span style={{ color: '#94e2d5', fontSize: 10, fontWeight: 700 }}>마일스톤</span>
-                {milestones.filter(m => !m.done).length > 0 && (
-                  <span style={{
-                    background: '#94e2d522', color: '#94e2d5',
-                    fontSize: 9, padding: '0 5px', borderRadius: 8, fontWeight: 700,
-                  }}>{milestones.filter(m => !m.done).length}</span>
-                )}
-              </div>
-
-              {/* Swimlane labels */}
-              {layout.swimlanes.map(sl => {
-                const col = projectColor(sl.proj)
+              {layout.lanes.map(lane => {
+                const col = projectColor(lane.name === UNASSIGNED ? '' : lane.name)
                 return (
-                  <div key={sl.proj} style={{ height: sl.height + 1, borderBottom: `1px solid ${C.bg3}` }}>
-                    <div style={{
-                      height: SWIM_HDR, display: 'flex', alignItems: 'center',
-                      padding: '0 10px', gap: 5,
-                      background: `${col}12`, borderBottom: `1px solid ${C.bg3}44`,
-                    }}>
-                      <span style={{ color: col, fontWeight: 700, fontSize: 11, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sl.proj}</span>
-                      <button
-                        onClick={() => onAdd(sl.proj === '(미지정)' ? '' : sl.proj)}
-                        style={{ color: C.fg3, background: 'transparent', flexShrink: 0, lineHeight: 1 }}
-                        onMouseEnter={e => e.currentTarget.style.color = col}
-                        onMouseLeave={e => e.currentTarget.style.color = C.fg3}
-                        title="이 프로젝트에 작업 추가"
-                      ><Plus size={11} strokeWidth={2.5} /></button>
-                    </div>
-
-                    {sl.taskRows.map(({ task: t, h }) => (
-                      <TaskLabelRow
-                        key={t.id} task={t} h={h}
-                        dueDates={dueDates} milestones={milestones}
-                        onEdit={onEdit} onDelete={onDelete} onToggleDone={onToggleDone}
-                        onDetail={setDetailTask}
-                        hoveredId={hoveredId} connectedIds={connectedIds}
-                        onHover={handleHover}
-                      />
-                    ))}
+                  <div key={lane.name} style={{ boxShadow: `inset 0 -1px 0 ${C.bg3}` }}>
+                    <ProjectHeaderRow
+                      lane={lane} color={col}
+                      onToggle={() => toggleLane(lane.name)}
+                      onAdd={() => onAdd(lane.name === UNASSIGNED ? '' : lane.name)}
+                    />
+                    {lane.rows.map((r, i) => {
+                      if (r.kind === 'ms') {
+                        return (
+                          <MilestoneHeaderRow
+                            key={`ms-${r.group.ms.id}`}
+                            group={r.group} color={col} todayISO={todayISO}
+                            onEditMilestone={onEditMilestone}
+                            onAddTask={() => onAdd(lane.name === UNASSIGNED ? '' : lane.name, r.group.ms.id)}
+                          />
+                        )
+                      }
+                      if (r.kind === 'loose') {
+                        return (
+                          <div key={`loose-${i}`} style={{
+                            height: LOOSE_HDR, boxSizing: 'border-box',
+                            display: 'flex', alignItems: 'center', padding: '0 8px 0 16px',
+                            boxShadow: `inset 0 -1px 0 ${C.bg3}33`,
+                          }}>
+                            <span style={{ color: C.fg3, fontSize: 9, fontWeight: 600, letterSpacing: 0.5, opacity: 0.7 }}>기타 작업</span>
+                          </div>
+                        )
+                      }
+                      return (
+                        <TaskLabelRow
+                          key={r.task.id} task={r.task} h={r.h}
+                          indent={r.group ? 22 : 10}
+                          dueDates={dueDates} milestones={milestones}
+                          onEdit={onEdit} onDelete={onDelete}
+                          onDetail={setDetailTask}
+                          hoveredId={hoveredId} connectedIds={connectedIds}
+                          onHover={handleHover}
+                        />
+                      )
+                    })}
                   </div>
                 )
               })}
@@ -658,20 +954,22 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
 
             {/* ── SVG timeline ── */}
             <svg
-              width={svgW} height={layout.totalH}
-              style={{ display: 'block', flexShrink: 0 }}
+              width={svgW} height={svgH}
+              style={{ display: 'block', flexShrink: 0, touchAction: 'none' }}
               onMouseLeave={() => setHoveredId(null)}
             >
               {/* Header bg */}
               <rect x={0} y={0} width={svgW} height={HEADER_H} fill="#252537" />
-              {/* Milestone strip bg */}
-              <rect x={0} y={HEADER_H} width={svgW} height={MS_STRIP_H} fill="#94e2d508" />
-              <line x1={0} y1={BODY_Y} x2={svgW} y2={BODY_Y} stroke={C.bg3} strokeWidth={1} />
+
+              {/* Weekend shading */}
+              {weekendBands.map((b, i) => (
+                <rect key={i} x={b.x} y={HEADER_H} width={b.w} height={svgH - HEADER_H} fill="rgba(0,0,0,0.16)" />
+              ))}
 
               {/* Week grid lines + date labels */}
               {weekLines.map((wl, i) => (
                 <g key={i}>
-                  <line x1={wl.x} y1={0} x2={wl.x} y2={layout.totalH} stroke={C.bg3} strokeWidth={1} />
+                  <line x1={wl.x} y1={0} x2={wl.x} y2={svgH} stroke={C.bg3} strokeWidth={1} />
                   {wl.dateLabel && (
                     <text x={wl.x + 3} y={HEADER_H - 5} fill={C.fg3} fontSize={9}>{wl.dateLabel}</text>
                   )}
@@ -681,101 +979,209 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
               {/* Month marks + labels */}
               {monthMarks.map((m, i) => (
                 <g key={i}>
-                  <line x1={m.x} y1={0} x2={m.x} y2={layout.totalH} stroke={C.fg3} strokeWidth={0.5} opacity={0.25} />
-                  <text x={m.x + 5} y={HEADER_H / 2 + 4} fill={C.fg2} fontSize={11} fontWeight={700}>{m.label}</text>
+                  <line x1={m.x} y1={0} x2={m.x} y2={svgH} stroke={C.fg3} strokeWidth={0.5} opacity={0.25} />
+                  <text x={m.x + 5} y={12} fill={C.fg2} fontSize={10} fontWeight={700}>{m.label}</text>
                 </g>
               ))}
 
               {/* Today line */}
               {todayX >= 0 && todayX <= svgW && (
                 <g>
-                  <line x1={todayX} y1={0} x2={todayX} y2={layout.totalH} stroke={C.accent} strokeWidth={1.5} opacity={0.55} />
+                  <line x1={todayX} y1={0} x2={todayX} y2={svgH} stroke={C.accent} strokeWidth={1.5} opacity={0.55} />
                   <text x={todayX + 4} y={HEADER_H - 7} fill={C.accent} fontSize={10} fontWeight={600}>오늘</text>
                 </g>
               )}
 
-              {/* ── Milestone strip: diamonds at target dates ── */}
-              {milestones.map(ms => {
-                if (!ms.target) return null
-                const x = dateToX(ms.target)
-                if (x < -30 || x > svgW + 30) return null
-                const col = projectColor(ms.project)
-                const cy  = HEADER_H + MS_STRIP_H / 2
-                const sz  = 5
-                const maxLen = dayW >= 8 ? 15 : 0
-                const label  = maxLen > 0 && ms.detail
-                  ? (ms.detail.length > maxLen ? ms.detail.slice(0, maxLen - 1) + '…' : ms.detail)
-                  : null
+              {/* ── Lanes ── */}
+              {layout.lanes.map(lane => {
+                const col = projectColor(lane.name === UNASSIGNED ? '' : lane.name)
+                const hdrCy = lane.top + SWIM_HDR / 2
+
+                // Lane span: min/max over tasks, milestone targets, header due dates
+                const spanDates = []
+                for (const t of lane.tasks) { const e = effTask(t); spanDates.push(e.startDate, e.endDate) }
+                for (const g of lane.groups) if (g.ms.target) spanDates.push(g.ms.target)
+                for (const d of lane.headerDDs) if (d.date) spanDates.push(d.date)
+                const spanMin = spanDates.length ? spanDates.reduce((a, b) => a < b ? a : b) : null
+                const spanMax = spanDates.length ? spanDates.reduce((a, b) => a > b ? a : b) : null
+
                 return (
-                  <g key={ms.id}>
-                    {/* Dashed vertical guide through swimlanes */}
-                    <line
-                      x1={x} y1={BODY_Y} x2={x} y2={layout.totalH}
-                      stroke={col} strokeWidth={0.5} opacity={0.15} strokeDasharray="4,4"
-                    />
-                    {/* Diamond */}
-                    <polygon
-                      points={`${x},${cy - sz} ${x + sz},${cy} ${x},${cy + sz} ${x - sz},${cy}`}
-                      fill={col} opacity={ms.done ? 0.25 : 0.85}
-                    >
-                      <title>{ms.project ? `[${ms.project}] ` : ''}{ms.detail} → {fmtDateStr(ms.target)}{ms.done ? ' ✓' : ''}</title>
-                    </polygon>
-                    {label && (
-                      <text
-                        x={x + sz + 3} y={cy + 4}
-                        fill={col} fontSize={9} fontWeight={600} opacity={ms.done ? 0.35 : 0.85}
-                        style={{ pointerEvents: 'none', userSelect: 'none' }}
-                      >{label}</text>
+                  <g key={lane.name}>
+                    {/* Header band */}
+                    <rect x={0} y={lane.top} width={svgW} height={SWIM_HDR} fill={`${col}10`} />
+                    <line x1={0} y1={lane.top + lane.height} x2={svgW} y2={lane.top + lane.height} stroke={C.bg3} strokeWidth={1} />
+
+                    {/* Project span line on header row */}
+                    {spanMin && spanMax && (
+                      <rect
+                        x={dateToX(spanMin)} y={hdrCy - 1.5}
+                        width={Math.max(dateToX(spanMax) + dayW - dateToX(spanMin), 2)} height={3} rx={1.5}
+                        fill={col} opacity={0.3}
+                      />
                     )}
-                  </g>
-                )
-              })}
 
-              {/* ── Swimlane bands + task bars ── */}
-              {layout.swimlanes.map(sl => {
-                const col = projectColor(sl.proj)
-                return (
-                  <g key={sl.proj}>
-                    <rect x={0} y={sl.headerY} width={svgW} height={SWIM_HDR} fill={`${col}10`} />
-                    <line x1={0} y1={sl.headerY + sl.height} x2={svgW} y2={sl.headerY + sl.height} stroke={C.bg3} strokeWidth={1} />
+                    {/* Collapsed: condensed task strip + milestone diamonds */}
+                    {lane.isCollapsed && lane.tasks.map(t => {
+                      const e  = effTask(t)
+                      const x1 = dateToX(e.startDate)
+                      const w  = Math.max(dateToX(e.endDate) + dayW - x1, 2)
+                      return (
+                        <rect key={t.id} x={x1} y={hdrCy - 3} width={w} height={6} rx={2}
+                          fill={col} opacity={0.65}>
+                          <title>{t.title}{'\n'}{fmtDateStr(t.startDate)} ~ {fmtDateStr(t.endDate)}</title>
+                        </rect>
+                      )
+                    })}
+                    {lane.isCollapsed && lane.groups.map(({ ms }) => {
+                      if (!ms.target) return null
+                      const x = dateToX(ms.target)
+                      const overdue = !ms.done && ms.target < todayISO
+                      const mc = overdue ? C.warn : col
+                      const sz = 5
+                      return (
+                        <polygon
+                          key={ms.id}
+                          points={`${x},${hdrCy - sz} ${x + sz},${hdrCy} ${x},${hdrCy + sz} ${x - sz},${hdrCy}`}
+                          fill={mc} opacity={ms.done ? 0.3 : 0.95}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => onEditMilestone?.(ms.id)}
+                        >
+                          <title>마일스톤: {ms.detail} → {fmtDateStr(ms.target)}{ms.done ? ' (완료)' : overdue ? ' (지남)' : ''}</title>
+                        </polygon>
+                      )
+                    })}
 
-                    {sl.taskRows.map(({ task: t, rowY, h }) => {
+                    {/* Unlinked due-date flags on header row */}
+                    {lane.headerDDs.map(dd => {
+                      if (!dd.date) return null
+                      const x = dateToX(dd.date) + dayW
+                      const overdue = !dd.done && dd.date < todayISO
+                      const fc = dd.done ? C.fg3 : overdue ? C.warn : '#f9e2af'
+                      return renderFlag(`hdd-${dd.id}`, x, hdrCy, fc, {
+                        faded: dd.done,
+                        title: `마감: ${dd.task} → ${fmtDateStr(dd.date)}${dd.done ? ' (완료)' : overdue ? ' (지남)' : ''}`,
+                        onClick: () => onEditDueDate?.(dd.id),
+                      })
+                    })}
+
+                    {/* ── Rows ── */}
+                    {lane.rows.map((r, ri) => {
+                      // Milestone group row: span bar + diamond + dashed guide through its tasks
+                      if (r.kind === 'ms') {
+                        const { ms, tasks: gTasks } = r.group
+                        if (!ms.target) return null
+                        const x  = dateToX(ms.target)
+                        const cy = r.y + r.h / 2
+                        const overdue = !ms.done && ms.target < todayISO
+                        const mc = overdue ? C.warn : col
+                        const starts = gTasks.map(t => effTask(t).startDate)
+                        const gMin = starts.length ? starts.reduce((a, b) => a < b ? a : b) : null
+                        const sz = 5.5
+                        return (
+                          <g key={`msr-${ms.id}`}>
+                            <rect x={0} y={r.y} width={svgW} height={r.h} fill={`${col}06`} />
+                            {gMin && dateToX(gMin) < x && (
+                              <line x1={dateToX(gMin)} y1={cy} x2={x - sz} y2={cy} stroke={mc} strokeWidth={2} opacity={0.4} />
+                            )}
+                            {/* dashed guide through this group's task rows */}
+                            {r.bottom > r.y + r.h && (
+                              <line x1={x} y1={r.y + r.h} x2={x} y2={r.bottom} stroke={mc} strokeWidth={1} opacity={0.3} strokeDasharray="3,3" />
+                            )}
+                            <polygon
+                              points={`${x},${cy - sz} ${x + sz},${cy} ${x},${cy + sz} ${x - sz},${cy}`}
+                              fill={ms.done ? 'none' : mc}
+                              stroke={mc} strokeWidth={1.5}
+                              opacity={ms.done ? 0.45 : 0.95}
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => onEditMilestone?.(ms.id)}
+                            >
+                              <title>마일스톤: {ms.detail} → {fmtDateStr(ms.target)}{ms.done ? ' (완료)' : overdue ? ' (지남)' : ''}</title>
+                            </polygon>
+                            <text x={x + sz + 4} y={cy + 3.5} fill={mc} fontSize={9} fontWeight={600} opacity={0.85}
+                              style={{ pointerEvents: 'none', userSelect: 'none' }}>
+                              {fmtDateStr(ms.target)}{overdue ? ' 지남' : ''}
+                            </text>
+                          </g>
+                        )
+                      }
+
+                      if (r.kind !== 'task') return null
+
+                      // Task bar
+                      const t   = r.task
+                      const e   = effTask(t)
                       const pos = posMap[t.id]
                       if (!pos) return null
-                      const bH      = ROW_H - 10
-                      const bY      = rowY + (h - bH) / 2
-                      const maxChars = Math.floor(pos.w / 7)
-                      const label   = t.title.length > maxChars ? t.title.slice(0, Math.max(0, maxChars - 1)) + '…' : t.title
-                      const hasDD   = !!t.dueDateId
-                      const hasMS   = !!t.milestoneId
-                      const isHov   = hoveredId === t.id
-                      const isDim   = hoveredId && connectedIds && !connectedIds.has(t.id)
+                      const bH  = ROW_H - 10
+                      const bY  = r.y + (r.h - bH) / 2
+                      const isHov = hoveredId === t.id
+                      const isDim = hoveredId && connectedIds && !connectedIds.has(t.id) && !(drag?.id === t.id)
+                      const isDragging = drag?.id === t.id && drag.moved
+                      const handleW = Math.min(8, pos.w / 3)
+
+                      // Linked due date → flag on this row
+                      const dd = t.dueDateId ? dueDates.find(d => d.id === t.dueDateId) : null
+                      let ddFlag = null
+                      if (dd?.date) {
+                        const fx = dateToX(dd.date) + dayW
+                        const over = e.endDate > dd.date
+                        const fc = over ? C.warn : '#f9e2af'
+                        ddFlag = (
+                          <g key={`ddf-${t.id}`}>
+                            {Math.abs(fx - pos.x2) > 2 && (
+                              <line
+                                x1={Math.min(fx, pos.x2)} y1={pos.cy} x2={Math.max(fx, pos.x2)} y2={pos.cy}
+                                stroke={fc} strokeWidth={1} strokeDasharray="2,2" opacity={0.5}
+                              />
+                            )}
+                            {renderFlag(`f-${t.id}`, fx, pos.cy, fc, {
+                              title: `마감: ${dd.task} → ${fmtDateStr(dd.date)}${over ? ' (초과)' : ''}`,
+                              onClick: () => onEditDueDate?.(dd.id),
+                            })}
+                          </g>
+                        )
+                      }
 
                       return (
-                        <g
-                          key={t.id}
-                          onClick={() => setDetailTask(t)}
+                        <g key={t.id}
                           onMouseEnter={() => setHoveredId(t.id)}
                           onMouseLeave={() => setHoveredId(null)}
-                          style={{ cursor: 'pointer' }}
                         >
+                          {ddFlag}
                           <rect
                             x={pos.x1} y={bY} width={pos.w} height={bH} rx={4}
                             fill={col}
-                            fillOpacity={t.done ? 0.15 : (isDim ? 0.18 : 0.82)}
-                            stroke={isHov ? col : (t.done ? col : 'none')}
-                            strokeWidth={isHov ? 2 : 1}
-                            strokeDasharray={t.done ? '4,3' : undefined}
+                            fillOpacity={isDim ? 0.15 : 0.8}
+                            stroke={isHov || isDragging ? col : 'none'}
+                            strokeWidth={2}
+                            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                            onPointerDown={(ev) => startDrag(ev, t, 'move')}
+                            onPointerMove={moveDrag}
+                            onPointerUp={(ev) => endDrag(ev, t)}
                           />
-                          {pos.w > 32 && !isDim && (
+                          {/* resize handles */}
+                          <rect
+                            x={pos.x1} y={bY} width={handleW} height={bH} fill="transparent"
+                            style={{ cursor: 'ew-resize' }}
+                            onPointerDown={(ev) => startDrag(ev, t, 'l')}
+                            onPointerMove={moveDrag}
+                            onPointerUp={(ev) => endDrag(ev, t)}
+                          />
+                          <rect
+                            x={pos.x2 - handleW} y={bY} width={handleW} height={bH} fill="transparent"
+                            style={{ cursor: 'ew-resize' }}
+                            onPointerDown={(ev) => startDrag(ev, t, 'r')}
+                            onPointerMove={moveDrag}
+                            onPointerUp={(ev) => endDrag(ev, t)}
+                          />
+                          {isDragging && (
                             <text
-                              x={pos.x1 + 7} y={bY + bH / 2 + 4}
-                              fill={t.done ? col : '#1e1e2e'} fontSize={10} fontWeight={700}
+                              x={pos.x1} y={bY - 3}
+                              fill={C.fg} fontSize={9} fontWeight={700}
+                              stroke="#181825" strokeWidth={3} paintOrder="stroke"
                               style={{ pointerEvents: 'none', userSelect: 'none' }}
-                            >{label}</text>
+                            >{fmtDateStr(e.startDate)} ~ {fmtDateStr(e.endDate)}</text>
                           )}
-                          {hasDD && <rect x={pos.x1 + pos.w - 4} y={bY} width={4} height={bH} fill="#f9e2af" fillOpacity={isDim ? 0.3 : 0.9} />}
-                          {hasMS && <rect x={pos.x1 + pos.w - (hasDD ? 8 : 4)} y={bY} width={4} height={bH} fill="#94e2d5" fillOpacity={isDim ? 0.3 : 0.9} />}
                         </g>
                       )
                     })}
@@ -789,18 +1195,44 @@ export default function FlowView({ data, onAdd, onEdit, onDelete, onImport, onTo
                 const opacity  = hoveredId ? (isActive ? 0.95 : 0.04) : 0.38
                 const stroke   = isActive ? col : C.fg3
                 const sw       = isActive ? 2 : 1
-                // Small arrowhead triangle at destination
                 const ah = 5, aw = 3
                 const arrowPts = arrowDir === 'right'
                   ? `${x2},${y2} ${x2 - ah},${y2 - aw} ${x2 - ah},${y2 + aw}`
                   : `${x2},${y2} ${x2 + ah},${y2 - aw} ${x2 + ah},${y2 + aw}`
                 return (
-                  <g key={`${predId}→${succId}`} opacity={opacity} style={{ transition: 'opacity 0.12s' }}>
+                  <g key={`${predId}→${succId}`} opacity={opacity} style={{ transition: 'opacity 0.12s', pointerEvents: 'none' }}>
                     <path d={pathD} stroke={stroke} strokeWidth={sw} fill="none" />
                     <polygon points={arrowPts} fill={stroke} />
                   </g>
                 )
               })}
+
+              {/* ── Hover title label (topmost so arrows never cross the text) ── */}
+              {(() => {
+                const t   = hoveredId ? tasks.find(x => x.id === hoveredId) : null
+                const pos = t ? posMap[t.id] : null
+                if (!t || !pos) return null
+                const firstLine = t.title.split('\n')[0]
+                const inside    = estTextW(firstLine) <= pos.w - 13
+                const text      = inside ? firstLine : truncToWidth(firstLine, 260)
+                const tw        = estTextW(text)
+                const tx        = inside ? pos.x1 + 7 : pos.x2 + 8
+                return (
+                  <g style={{ pointerEvents: 'none' }}>
+                    {!inside && (
+                      <rect
+                        x={tx - 5} y={pos.cy - 9} width={tw + 10} height={18} rx={4}
+                        fill={C.bg2} opacity={0.95} stroke={C.bg3} strokeWidth={1}
+                      />
+                    )}
+                    <text
+                      x={tx} y={pos.cy + 3.5}
+                      fill={inside ? '#1e1e2e' : C.fg} fontSize={10} fontWeight={400}
+                      style={{ userSelect: 'none' }}
+                    >{text}</text>
+                  </g>
+                )
+              })()}
             </svg>
           </div>
         )}

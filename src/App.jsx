@@ -72,8 +72,14 @@ export default function App() {
   // ── Entry handlers ────────────────────────────────────────────────────────
   const onAddEntry    = (ds, dayLabel) => setDialog({ t: 'addEntry', ds, dayLabel })
   const onEditEntry   = (ds, idx, entry, dayLabel) => setDialog({ t: 'editEntry', ds, idx, entry, dayLabel })
-  const onDeleteEntry = (ds, idx) =>
-    mutate(setEntries(data, wk, ds, getEntries(data, wk, ds).filter((_, i) => i !== idx)))
+  const onDeleteEntry = (ds, idx) => {
+    const entries = getEntries(data, wk, ds)
+    const entry   = entries[idx]
+    let nd = setEntries(data, wk, ds, entries.filter((_, i) => i !== idx))
+    // remove the mirrored flow task together with the entry
+    if (entry?.taskId) nd = setTasks(nd, getTasks(nd).filter(t => t.id !== entry.taskId))
+    mutate(nd)
+  }
 
   // ── Due date handlers ─────────────────────────────────────────────────────
   const onAddDD        = () => setDialog({ t: 'addDD' })
@@ -101,21 +107,23 @@ export default function App() {
   })))
 
   // ── Task (Flow) handlers ─────────────────────────────────────────────────
-  const onAddTask    = (project) => setDialog({ t: 'addTask', project: project || '' })
+  const onAddTask    = (project, milestoneId) => setDialog({ t: 'addTask', project: project || '', milestoneId: milestoneId || '' })
   const onEditTask   = (task)    => setDialog({ t: 'editTask', task })
+  const onUpdateTask = (task)    => mutate(setTasks(data, getTasks(data).map(t => t.id === task.id ? task : t)))
   const onDeleteTask = (id)      => mutate(setTasks(data, getTasks(data).filter(t => t.id !== id)))
+  const onEditMSById = (id) => {
+    const idx = getMilestones(data).findIndex(m => m.id === id)
+    if (idx >= 0) setDialog({ t: 'editMS', idx })
+  }
+  const onEditDDById = (id) => {
+    const idx = getDueDates(data).findIndex(d => d.id === id)
+    if (idx >= 0) setDialog({ t: 'editDD', idx })
+  }
   const onImportTasks = (newTasks) => {
     const existing = new Set(getTasks(data).map(t => `${t.startDate}|${t.title}`))
     const toAdd = newTasks.filter(t => !existing.has(`${t.startDate}|${t.title}`))
     if (toAdd.length) mutate(setTasks(data, [...getTasks(data), ...toAdd]))
   }
-  const onToggleDoneTask = (id) => mutate(setTasks(data, getTasks(data).map(t => {
-    if (t.id !== id) return t
-    const done = !t.done
-    if (done) return { ...t, done, completedAt: toISO(new Date()) }
-    const { completedAt: _, ...rest } = t
-    return { ...rest, done }
-  })))
 
   // ── Blocker handlers ──────────────────────────────────────────────────────
   const onAddBL    = () => setDialog({ t: 'addBL' })
@@ -218,52 +226,58 @@ export default function App() {
       )}
 
       {tab === 'flow' && (
-        <FlowView data={data} onAdd={onAddTask} onEdit={onEditTask} onDelete={onDeleteTask} onImport={onImportTasks} onToggleDone={onToggleDoneTask} />
+        <FlowView
+          data={data}
+          onAdd={onAddTask} onEdit={onEditTask} onUpdate={onUpdateTask} onDelete={onDeleteTask}
+          onImport={onImportTasks}
+          onEditMilestone={onEditMSById} onEditDueDate={onEditDDById}
+        />
       )}
 
       {/* ── Dialogs ─────────────────────────────────────────────────────── */}
       {dialog?.t === 'addEntry' && (
-        <AddEntryDialog projects={data.projects} tasks={getTasks(data)} dayLabel={dialog.dayLabel} onClose={close}
+        <AddEntryDialog projects={data.projects} tasks={getTasks(data)} milestones={getMilestones(data)} dayLabel={dialog.dayLabel} onClose={close}
           onSubmit={entry => {
-            let nd = data
-            let saved = entry
-            if (entry.predecessorIds?.length > 0) {
-              const taskId = genId()
-              nd = setTasks(nd, [...getTasks(nd), {
-                id: taskId, project: entry.project, title: entry.title, notes: entry.content,
-                startDate: dialog.ds, endDate: dialog.ds,
-                predecessors: entry.predecessorIds, dueDateId: null, milestoneId: null, done: false,
-              }])
-              saved = { ...saved, taskId }
-            }
-            mutate(setEntries(nd, wk, dialog.ds, [...getEntries(nd, wk, dialog.ds), saved]))
+            // Every week entry is mirrored as a flow task so it shows on the chart
+            // and can be picked as a predecessor later.
+            const taskId = genId()
+            const nd = setTasks(data, [...getTasks(data), {
+              id: taskId, project: entry.project, title: entry.title, notes: entry.content,
+              startDate: dialog.ds, endDate: dialog.ds,
+              predecessors: entry.predecessorIds || [], dueDateId: null,
+              milestoneId: entry.milestoneId || null, done: true, completedAt: dialog.ds,
+            }])
+            mutate(setEntries(nd, wk, dialog.ds, [...getEntries(nd, wk, dialog.ds), { ...entry, taskId }]))
             close()
           }}
         />
       )}
       {dialog?.t === 'editEntry' && (
-        <AddEntryDialog projects={data.projects} tasks={getTasks(data)} dayLabel={dialog.dayLabel} initial={dialog.entry} onClose={close}
+        <AddEntryDialog projects={data.projects} tasks={getTasks(data)} milestones={getMilestones(data)} dayLabel={dialog.dayLabel} initial={dialog.entry} onClose={close}
           onSubmit={entry => {
             let nd = data
             let saved = entry
-            if (entry.predecessorIds?.length > 0) {
-              if (entry.taskId && getTasks(nd).find(t => t.id === entry.taskId)) {
-                nd = setTasks(nd, getTasks(nd).map(t =>
-                  t.id === entry.taskId ? { ...t, predecessors: entry.predecessorIds, notes: entry.content } : t
-                ))
-              } else {
-                const taskId = genId()
-                nd = setTasks(nd, [...getTasks(nd), {
-                  id: taskId, project: entry.project, title: entry.title, notes: entry.content,
-                  startDate: dialog.ds, endDate: dialog.ds,
-                  predecessors: entry.predecessorIds, dueDateId: null, milestoneId: null, done: false,
-                }])
-                saved = { ...saved, taskId }
-              }
-            } else if (entry.taskId) {
+            const hasTask = entry.taskId && getTasks(nd).some(t => t.id === entry.taskId)
+            if (hasTask) {
+              // keep the mirrored flow task in sync with the entry
               nd = setTasks(nd, getTasks(nd).map(t =>
-                t.id === entry.taskId ? { ...t, predecessors: [] } : t
+                t.id === entry.taskId
+                  ? {
+                      ...t, project: entry.project, title: entry.title, notes: entry.content,
+                      predecessors: entry.predecessorIds || [], milestoneId: entry.milestoneId || null,
+                    }
+                  : t
               ))
+            } else {
+              // mirror was missing (e.g., deleted in flow) — recreate it
+              const taskId = genId()
+              nd = setTasks(nd, [...getTasks(nd), {
+                id: taskId, project: entry.project, title: entry.title, notes: entry.content,
+                startDate: dialog.ds, endDate: dialog.ds,
+                predecessors: entry.predecessorIds || [], dueDateId: null,
+                milestoneId: entry.milestoneId || null, done: true, completedAt: dialog.ds,
+              }])
+              saved = { ...saved, taskId }
             }
             mutate(setEntries(nd, wk, dialog.ds, getEntries(nd, wk, dialog.ds).map((x, i) => i === dialog.idx ? saved : x)))
             close()
@@ -299,6 +313,7 @@ export default function App() {
           projects={data.projects} tasks={getTasks(data)}
           dueDates={getDueDates(data)} milestones={getMilestones(data)}
           initialProject={dialog.project}
+          initialMilestoneId={dialog.milestoneId}
           onClose={close}
           onSubmit={task => { mutate(setTasks(data, [...getTasks(data), task])); close() }}
         />

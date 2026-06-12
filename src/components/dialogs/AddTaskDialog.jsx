@@ -13,7 +13,7 @@ const selectStyle = {
   colorScheme: 'dark',
 }
 
-export default function AddTaskDialog({ projects, tasks, dueDates = [], milestones = [], initial, initialProject, onClose, onSubmit }) {
+export default function AddTaskDialog({ projects, tasks, dueDates = [], milestones = [], initial, initialProject, initialMilestoneId, onClose, onSubmit }) {
   const [project, setProject]       = useState(initial?.project ?? initialProject ?? '')
   const [title, setTitle]           = useState(initial?.title ?? '')
   const [start, setStart]           = useState(initial?.startDate ?? toISO(new Date()))
@@ -21,8 +21,7 @@ export default function AddTaskDialog({ projects, tasks, dueDates = [], mileston
   const [preds, setPreds]           = useState(initial?.predecessors ?? [])
   const [notes, setNotes]           = useState(initial?.notes ?? '')
   const [dueDateId, setDueDateId]   = useState(initial?.dueDateId ?? '')
-  const [milestoneId, setMilestoneId] = useState(initial?.milestoneId ?? '')
-  const [done, setDone]             = useState(initial?.done ?? false)
+  const [milestoneId, setMilestoneId] = useState(initial?.milestoneId ?? initialMilestoneId ?? '')
   const [errors, setErrors]         = useState({})
   const titleRef = useRef()
 
@@ -41,6 +40,7 @@ export default function AddTaskDialog({ projects, tasks, dueDates = [], mileston
     if (start && end && start > end)    e.end = true
     if (Object.keys(e).length) { setErrors(e); return }
     onSubmit({
+      ...(initial || {}),
       id: initial?.id ?? genId(),
       project,
       title: title.trim(),
@@ -50,7 +50,7 @@ export default function AddTaskDialog({ projects, tasks, dueDates = [], mileston
       predecessors: preds,
       dueDateId: dueDateId || null,
       milestoneId: milestoneId || null,
-      done,
+      done: initial?.done ?? true,
     })
   }
 
@@ -212,18 +212,6 @@ export default function AddTaskDialog({ projects, tasks, dueDates = [], mileston
           </div>
         )}
 
-        {/* Done (edit only) */}
-        {initial && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={done}
-              onChange={e => setDone(e.target.checked)}
-              style={{ accentColor: C.success, width: 14, height: 14 }}
-            />
-            <span style={{ color: C.fg2, fontSize: 12 }}>완료 처리</span>
-          </label>
-        )}
       </div>
       <ModalFooter onClose={onClose} onSubmit={submit} submitText={initial ? '저장' : '추가'} />
     </Modal>

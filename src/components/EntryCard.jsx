@@ -3,7 +3,7 @@ import { Trash2 } from 'lucide-react'
 import { C, projectColor } from '../utils/colors'
 import { renderLines } from '../utils/content'
 
-export default function EntryCard({ entry, onEdit, onDelete }) {
+export default function EntryCard({ entry, milestone, onEdit, onDelete }) {
   const [hovered, setHovered] = useState(false)
   const col = projectColor(entry.project)
   const title = entry.title ?? entry.text ?? ''
@@ -37,6 +37,21 @@ export default function EntryCard({ entry, onEdit, onDelete }) {
         {hasContent && (
           <div style={{ marginTop: 3 }}>
             {renderLines(entry.content)}
+          </div>
+        )}
+        {milestone && (
+          <div style={{ marginTop: 4 }}>
+            <span
+              title={`마일스톤: ${milestone.detail}`}
+              style={{
+                display: 'inline-block', maxWidth: '100%',
+                color: '#94e2d5', background: '#94e2d51a',
+                fontSize: 9, fontWeight: 600, lineHeight: 1.4,
+                padding: '1px 5px', borderRadius: 3,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                verticalAlign: 'bottom',
+              }}
+            >◆ {milestone.detail}</span>
           </div>
         )}
       </div>

@@ -46,6 +46,7 @@ export function migrateData(data) {
               title: e.text ?? '',
               content: '',
               predecessorIds: [],
+              milestoneId: null,
               taskId: null,
             }
           ),
@@ -55,7 +56,39 @@ export function migrateData(data) {
     })
   )
 
-  return { ...data, due_dates: dd, milestones: ms, weeks: finalWeeks, tasks: data.tasks || [] }
+  // Mirror every week entry into a flow task (entries are the journal; flow shows them all).
+  // Reuse an existing task when one matches by date+title (e.g., previously imported),
+  // otherwise create one. Idempotent: linked entries are skipped.
+  let tasks = data.tasks || []
+  const byKey = new Map(tasks.map(t => [`${t.startDate}|${t.title}`, t]))
+  const mirroredWeeks = Object.fromEntries(
+    Object.entries(finalWeeks).map(([wkKey, w]) => {
+      const entries = Object.fromEntries(
+        Object.entries(w.entries || {}).map(([ds, dayEntries]) => [
+          ds,
+          (dayEntries || []).map(e => {
+            if (!e.title || (e.taskId && tasks.some(t => t.id === e.taskId))) return e
+            const key = `${ds}|${e.title}`
+            let task = byKey.get(key)
+            if (!task) {
+              task = {
+                id: genId(), project: e.project || '', title: e.title, notes: e.content || '',
+                startDate: ds, endDate: ds,
+                predecessors: e.predecessorIds || [], dueDateId: null,
+                milestoneId: e.milestoneId || null, done: true, completedAt: ds,
+              }
+              tasks = [...tasks, task]
+              byKey.set(key, task)
+            }
+            return { ...e, taskId: task.id }
+          }),
+        ])
+      )
+      return [wkKey, { ...w, entries }]
+    })
+  )
+
+  return { ...data, due_dates: dd, milestones: ms, weeks: mirroredWeeks, tasks }
 }
 
 const emptyWeek = () => ({ entries: {}, blockers: [] })

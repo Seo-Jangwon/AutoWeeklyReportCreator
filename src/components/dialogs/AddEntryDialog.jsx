@@ -5,18 +5,38 @@ import { C, projectColor } from '../../utils/colors'
 import { fmtDateStr } from '../../utils/dates'
 import { renderLines } from '../../utils/content'
 
-export default function AddEntryDialog({ projects, tasks = [], dayLabel, initial, onClose, onSubmit }) {
+const selectStyle = {
+  width: '100%', boxSizing: 'border-box',
+  background: '#313244', color: '#cdd6f4',
+  border: '1px solid #45475a', borderRadius: 6,
+  padding: '6px 10px', fontSize: 12,
+  colorScheme: 'dark',
+}
+
+export default function AddEntryDialog({ projects, tasks = [], milestones = [], dayLabel, initial, onClose, onSubmit }) {
   const [project, setProject]           = useState(initial?.project ?? (projects[0] ?? ''))
   const [title, setTitle]               = useState(initial?.title ?? initial?.text ?? '')
   const [content, setContent]           = useState(initial?.content ?? '')
   const [predecessorIds, setPredecessorIds] = useState(initial?.predecessorIds ?? [])
+  const [milestoneId, setMilestoneId]   = useState(initial?.milestoneId ?? '')
   const [previewId, setPreviewId]       = useState(null)
   const [errors, setErrors]             = useState({})
   const titleRef = useRef()
 
+  // Active milestones first (same project on top, then by target date); keep a done one only if already selected
+  const msOptions = milestones
+    .filter(m => !m.done || m.id === milestoneId)
+    .sort((a, b) =>
+      ((b.project === project) - (a.project === project)) ||
+      (a.target || '').localeCompare(b.target || '')
+    )
+
   useEffect(() => { titleRef.current?.focus() }, [])
 
-  const sortedTasks = [...tasks].sort((a, b) => b.startDate.localeCompare(a.startDate))
+  // Exclude this entry's own mirror task — an activity can't precede itself
+  const sortedTasks = tasks
+    .filter(t => t.id !== (initial?.taskId ?? ''))
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))
 
   const togglePred = (id) =>
     setPredecessorIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -30,6 +50,7 @@ export default function AddEntryDialog({ projects, tasks = [], dayLabel, initial
       title: title.trim(),
       content: content.trim(),
       predecessorIds,
+      milestoneId: milestoneId || null,
       taskId: initial?.taskId ?? null,
     })
   }
@@ -73,6 +94,23 @@ export default function AddEntryDialog({ projects, tasks = [], dayLabel, initial
             style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
           />
         </div>
+
+        {/* Milestone link */}
+        {msOptions.length > 0 && (
+          <div>
+            <label style={{ display: 'block', color: C.fg2, fontSize: 12, marginBottom: 5 }}>
+              마일스톤&nbsp;<span style={{ color: C.fg3, fontWeight: 400 }}>(선택 — 플로우 탭에서 해당 마일스톤 아래에 묶입니다)</span>
+            </label>
+            <select value={milestoneId} onChange={e => setMilestoneId(e.target.value)} style={selectStyle}>
+              <option value="">없음</option>
+              {msOptions.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.project ? `[${m.project}] ` : ''}{m.detail} → {fmtDateStr(m.target)}{m.done ? ' (완료)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Predecessor tasks */}
         {sortedTasks.length > 0 && (

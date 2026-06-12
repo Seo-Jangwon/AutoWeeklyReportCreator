@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react'
 import { C, blend } from '../utils/colors'
 import { DAY_NAMES, toISO, fmt, isToday } from '../utils/dates'
-import { getEntries } from '../utils/data'
+import { getEntries, getMilestones } from '../utils/data'
 import EntryCard from './EntryCard'
 
 function DeadlineDots({ dots }) {
@@ -34,6 +34,7 @@ function DeadlineDots({ dots }) {
 export default function DayColumn({ date, dayIdx, data, wk, dots, onAdd, onEdit, onDelete }) {
   const ds = toISO(date)
   const entries = getEntries(data, wk, ds)
+  const milestones = getMilestones(data)
   const today = isToday(date)
   const dayOfWeek = date.getDay()
 
@@ -81,6 +82,7 @@ export default function DayColumn({ date, dayIdx, data, wk, dots, onAdd, onEdit,
           <EntryCard
             key={idx}
             entry={entry}
+            milestone={entry.milestoneId ? milestones.find(m => m.id === entry.milestoneId) : null}
             onEdit={() => onEdit(ds, idx, entry, dayLabel)}
             onDelete={() => onDelete(ds, idx)}
           />
